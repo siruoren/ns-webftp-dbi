@@ -434,11 +434,15 @@ class FTPManager:
 
                     # 带重试的上传逻辑
                     file_done = False
+                    # 记录本文件开始前的总上传字节，重试时恢复
+                    uploaded_before_file = task["uploaded_bytes"]
                     for attempt in range(1, MAX_RETRIES + 1):
                         if task.get("cancelled"):
                             break
                         stall_event.clear()
                         wd_active.set()
+                        # 重试时恢复总进度到本文件开始前，避免重复累加
+                        task["uploaded_bytes"] = uploaded_before_file
                         task["current_file_bytes"] = 0
                         task["files"][idx]["status"] = "uploading"
                         task["files"][idx]["uploaded_bytes"] = 0
