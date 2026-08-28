@@ -996,6 +996,19 @@
                 updateFtpStatus('unknown', t('status_not_checked'));
             }
             updateSendButton();
+            // 切换服务器时清空选中状态，确保各实例操作隔离
+            selectedUploadFiles.clear();
+            const selectAllCb = document.getElementById('selectAllUploadsCheckbox');
+            if (selectAllCb) selectAllCb.classList.remove('checked');
+            // 刷新上传列表（按实例隔离显示）
+            loadTransfers();
+            // 检查是否有活跃任务需要继续轮询
+            fetch('/api/transfers').then(r => r.json()).then(data => {
+                const hasActive = (data.transfers || []).some(t =>
+                    ['starting', 'transferring'].includes(t.status)
+                );
+                if (hasActive) startTransferPolling();
+            });
         }
 
         async function checkFtpStatus() {
@@ -1124,18 +1137,13 @@
             _noticeTimer = setTimeout(() => { notice.style.display = 'none'; }, 5000);
         }
 
-        function showFilePath(path) {
-            showNotice(path, 'info');
-            // 尝试复制到剪贴板
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(path).catch(() => {});
-            }
-        }
-
         function getFilteredFiles() {
             if (!searchKeyword) return allFiles;
             const kw = searchKeyword.toLowerCase();
-            return allFiles.filter(f => f.name.toLowerCase().includes(kw));
+            return allFiles.filter(f =>
+                f.name.toLowerCase().includes(kw) ||
+                (f.dir || '').toLowerCase().includes(kw)
+            );
         }
 
         function renderFileList() {
@@ -1189,7 +1197,7 @@
                 item.innerHTML = `
                     <div class="checkbox ${isChecked ? 'checked' : ''}" onclick="toggleFile('${escapeAttr(f.path)}')"></div>
                     <div class="fname-cell" title="${escapeAttr(f.path)}">
-                        <span class="fname" style="cursor:pointer;" onclick="event.stopPropagation();showFilePath('${escapeAttr(f.path)}')">${escapeHtml(f.name)}</span>
+                        <span class="fname">${escapeHtml(f.name)}</span>
                         <span class="ftype ${typeClass}">${ext || 'file'}</span>
                     </div>
                     <div class="fsize">${formatSize(f.size)}</div>
@@ -1411,12 +1419,25 @@
         // ============================================================
         // 上传列表管理
         // ============================================================
+        function getCurrentServerName() {
+            const sel = document.getElementById('ftpSelect');
+            return sel ? sel.value : '';
+        }
+
+        function filterTransfersByServer(transfers) {
+            const name = getCurrentServerName();
+            if (!name) return transfers;
+            return transfers.filter(tr => tr.server === name);
+        }
+
         async function loadTransfers() {
             try {
                 const res = await fetch('/api/transfers');
                 const data = await res.json();
-                renderTransfers(data.transfers || []);
-                updateUploadBadge(data.transfers || []);
+                const all = data.transfers || [];
+                const filtered = filterTransfersByServer(all);
+                renderTransfers(filtered);
+                updateUploadBadge(filtered);
             } catch (e) {
                 console.error('Load transfers failed:', e);
             }
@@ -1442,7 +1463,8 @@
             try {
                 const res = await fetch('/api/transfers');
                 const data = await res.json();
-                const transfers = data.transfers || [];
+                const all = data.transfers || [];
+                const transfers = filterTransfersByServer(all);
                 renderTransfers(transfers);
                 updateUploadBadge(transfers);
 
@@ -1466,9 +1488,9 @@
                     }
                 });
 
-                // 如果没有活跃任务，停止轮询
+                // 如果没有任何活跃任务（所有服务器），停止轮询
                 const activeStatuses = ['starting', 'transferring'];
-                const hasActive = transfers.some(t => activeStatuses.includes(t.status));
+                const hasActive = all.some(t => activeStatuses.includes(t.status));
                 if (!hasActive) {
                     stopTransferPolling();
                 }
