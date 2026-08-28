@@ -2,7 +2,7 @@ server:
   host: 0.0.0.0
   port: 8090
 scan_dirs:
-- /Users/zhuguojun/Documents/git_project/ns-webftp-dbi/games
+- /games
 scan_extensions:
 - .nsp
 - .nsz
@@ -19,4 +19,4 @@ ftp_servers:
 ui_settings:
   page_size: 20
   show_all_files: false
-  language: zh
+  language: en

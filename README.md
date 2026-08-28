@@ -16,6 +16,14 @@
 
 ![勾选文件](screenshots/selected-files.png)
 
+### 上传列表（传输中）
+
+![上传列表-传输中](screenshots/upload-list-active.png)
+
+### 上传列表（失败+重试）
+
+![上传列表-失败重试](screenshots/upload-list-failed.png)
+
 ### English Interface
 
 ![English Interface](screenshots/main-en.png)
@@ -34,10 +42,19 @@
 - **多格式支持**：NSP、NSZ、XCI、XCZ
 - **多文件勾选**：列表复选框，支持全选/半选
 - **串行上传**：文件逐一上传（并发=1），避免 Switch 端压力
-- **FTP 传输**：通过 FTP 协议发送到 Switch DBI 后端
+- **FTP 传输**：通过 FTP 协议发送到 Switch DBI 后端，自动覆盖同名文件、自动创建目录
 - **多服务器管理**：YML 配置 + 页面手动添加，支持多个 Switch 地址切换
 - **连接状态图标**：实时显示 FTP 连接状态（绿色=已连接、红色=失败、灰色=未检测）
 - **传输进度**：整体进度百分比 + 单文件进度 + 实时速率 + ETA
+- **上传列表**：独立标签页，每个文件独立显示状态和进度百分比
+  - **自动去重**：已在上传列表中的文件（等待/上传中/失败）再次上传时自动忽略
+  - **自动移除**：上传完成的文件条目自动从列表中移除
+  - **失败重试**：勾选失败文件后一键重试，支持批量选择
+  - **取消选中**：勾选等待/上传中/失败的文件后一键取消，条目立即移除
+  - **一键全选**：上传列表工具栏全选/取消全选按钮
+  - **断点续传**：页面刷新不中断正在进行的上传任务，自动恢复进度显示
+  - **容错续传**：单个文件失败后自动重连 FTP，继续后续文件上传
+- **大文件支持**：1MB 数据块 + TCP KeepAlive + 300 秒超时保护，支持 GB 级文件长时间传输
 - **超时保护**：连接超时 + 传输读写超时 + NOOP 心跳保活
 - **中英双语**：右上角一键切换 ZH/EN 全界面语言（含排查指南）
 - **Docker 部署**：支持 docker-compose 一键部署
@@ -46,9 +63,7 @@
 - **分页显示**：每页 10/15/20 条可选，支持翻页
 - **多扫描目录**：页面管理多个扫描路径，支持添加/删除
 - **配置持久化**：UI 设置（分页大小、显示所有文件、语言）自动保存到 config.yml
-- **上传列表**：独立的上传列表标签页，每个文件显示状态和进度百分比，支持勾选取消
 - **定时刷新**：后台定时扫描文件列表，刷新按钮触发后台任务，同一时间只允许一个刷新
-- **断点续传**：页面刷新不中断正在进行的上传任务，自动恢复进度显示
 
 ## 快速开始
 
@@ -165,6 +180,7 @@ ui_settings:
 | GET | `/api/transfer/<id>/status` | 查询传输进度（含每个文件状态） |
 | POST | `/api/transfer/<id>/cancel` | 取消整个传输任务 |
 | POST | `/api/transfer/<id>/cancel-files` | 取消指定文件（body: {file_indices: [0,2]}） |
+| POST | `/api/transfer/<id>/retry-files` | 重试失败的文件（body: {file_indices: [0,2]}） |
 | DELETE | `/api/transfer/<id>` | 删除传输任务 |
 
 ## 使用前提
@@ -188,12 +204,14 @@ ns-webftp-dbi/
 │   └── build.yml         # GitHub Actions：自动构建镜像并发布
 ├── templates/
 │   └── index.html        # 前端页面：暗色主题 UI
-└── screenshots/          # 页面截图
-    ├── main-zh.png       # 中文主界面
-    ├── main-en.png       # 英文主界面
-    ├── selected-files.png # 勾选文件
-    ├── help-modal.png    # 帮助弹窗
-    └── add-server-modal.png # 添加服务器弹窗
+└── screenshots/              # 页面截图
+    ├── main-zh.png           # 中文主界面
+    ├── main-en.png           # 英文主界面
+    ├── selected-files.png    # 勾选文件
+    ├── upload-list-active.png # 上传列表-传输中
+    ├── upload-list-failed.png # 上传列表-失败重试
+    ├── help-modal.png        # 帮助弹窗
+    └── add-server-modal.png  # 添加服务器弹窗
 ```
 
 ## CI/CD
