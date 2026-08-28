@@ -1,6 +1,8 @@
 # Switch DBI FTP 传输工具
 
-参照 [ns-web-dbibackend](https://github.com/FallingMY/ns-web-dbibackend) 的页面 UI，用 Python 实现的 Switch DBI FTP 传输服务。
+参照 [ns-web-dbibackend](https://github.com/FallingMY/ns-web-dbibackend) 的页面 UI，用 Python 实现的 Switch DBI FTP 传输服务。# ns-webftp-dbi
+
+![Build and Release](https://github.com/FallingMY/ns-web-dbibackend/actions/workflows/build.yml/badge.svg)
 
 自动扫描目录下的 Switch 安装包（NSP / NSZ / XCI / XCZ），通过列表展示，支持多文件勾选后一键 FTP 发送到 Switch 上的 DBI 后端。
 
@@ -171,10 +173,13 @@ ui_settings:
 ```
 ns-webftp-dbi/
 ├── app.py                # Flask 后端：文件扫描、FTP 传输、API
-├── config.yml            # 配置文件：扫描目录、FTP 服务器
+├── config.yml            # 配置文件：扫描目录、FTP 服务器、UI 设置
+├── version.txt           # 版本号（CI/CD 构建时读取）
 ├── requirements.txt      # Python 依赖
 ├── Dockerfile            # Docker 镜像构建
 ├── docker-compose.yml    # Docker 编排
+├── .github/workflows/
+│   └── build.yml         # GitHub Actions：自动构建镜像并发布
 ├── templates/
 │   └── index.html        # 前端页面：暗色主题 UI
 └── screenshots/          # 页面截图
@@ -184,6 +189,54 @@ ns-webftp-dbi/
     ├── help-modal.png    # 帮助弹窗
     └── add-server-modal.png # 添加服务器弹窗
 ```
+
+## CI/CD
+
+项目使用 GitHub Actions 自动构建 Docker 镜像并发布。
+
+### 触发条件
+
+- **推送 main/master 分支**：构建镜像，上传为 Actions Artifact
+- **推送 tag（v*）**：构建镜像 + 创建 GitHub Release，附带镜像文件下载
+- **手动触发**：GitHub 仓库 → Actions → Build and Release → Run workflow
+
+### 构建流程
+
+1. 从 [version.txt](version.txt) 读取版本号
+2. 构建 Docker 镜像（带版本标签）
+3. `docker save` 导出为 `.tar.gz` 压缩文件
+4. 生成 SHA256 校验文件
+5. 上传为 GitHub Actions Artifact（保留 30 天）
+6. 创建 GitHub Release（仅 tag 触发），附带镜像文件和安装说明
+
+### 使用构建产物
+
+```bash
+# 从 Release 页面下载镜像文件
+docker load -i ns-webftp-dbi-1.0.0.tar.gz
+
+# 运行容器
+docker run -d --name ns-webftp-dbi \
+  -p 8090:8090 \
+  -v ./games:/games \
+  -v ./config.yml:/app/config.yml \
+  ns-webftp-dbi:1.0.0
+```
+
+### 发布新版本
+
+```bash
+# 1. 修改 version.txt 中的版本号
+echo "1.1.0" > version.txt
+
+# 2. 提交并打 tag
+git add version.txt
+git commit -m "chore: bump version to 1.1.0"
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+推送 tag 后 GitHub Actions 会自动构建并创建 Release。
 
 ## 技术栈
 

@@ -4,8 +4,13 @@ __pycache__
 *.pyd
 .git
 .gitignore
+.github
 .env
 *.md
 LICENSE
 .venv
 venv
+screenshots
+games
+*.tar
+*.tar.gz

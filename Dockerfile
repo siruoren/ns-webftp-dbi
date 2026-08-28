@@ -1,7 +1,9 @@
 FROM python:3.11-slim
 
+ARG VERSION=dev
 LABEL maintainer="ns-webftp-dbi"
 LABEL description="Switch DBI FTP Transfer Tool"
+LABEL version="${VERSION}"
 
 WORKDIR /app
 
