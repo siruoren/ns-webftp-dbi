@@ -89,11 +89,19 @@ class FileScanner:
             extensions = DEFAULT_EXTENSIONS
         ext_set = {e.lower() for e in extensions}
         results = []
+        dir_mtime_cache = {}
         for scan_dir in scan_dirs:
             scan_dir = os.path.expanduser(scan_dir)
             if not os.path.isdir(scan_dir):
                 continue
             for root, dirs, files in os.walk(scan_dir):
+                # 获取目录修改时间（缓存避免重复调用）
+                if root not in dir_mtime_cache:
+                    try:
+                        dir_mtime_cache[root] = os.path.getmtime(root)
+                    except OSError:
+                        dir_mtime_cache[root] = 0
+                dir_mtime = dir_mtime_cache[root]
                 for fname in files:
                     # 跳过隐藏文件和系统文件
                     if fname.startswith(".") or fname.lower() in FileScanner._SKIP_NAMES:
@@ -111,13 +119,15 @@ class FileScanner:
                         "name": fname,
                         "path": fpath,
                         "dir": root,
+                        "dir_mtime": dir_mtime,
+                        "dir_mtime_str": datetime.fromtimestamp(dir_mtime).strftime("%Y-%m-%d %H:%M") if dir_mtime else "",
                         "size": fsize,
                         "mtime": mtime,
                         "mtime_str": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),
                         "ext": ext,
                     })
-        # 按修改时间倒序（最新在前）
-        results.sort(key=lambda x: x["mtime"], reverse=True)
+        # 按目录修改时间倒序，同目录内按文件修改时间倒序
+        results.sort(key=lambda x: (x["dir_mtime"], x["mtime"]), reverse=True)
         return results
 
 
