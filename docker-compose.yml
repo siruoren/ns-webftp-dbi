@@ -5,8 +5,7 @@ services:
     build: .
     container_name: ns-webftp-dbi
     restart: unless-stopped
-    ports:
-      - "8090:8090"
+    network_mode: host
     environment:
       - FLASK_DEBUG=0
       - HOST=0.0.0.0
