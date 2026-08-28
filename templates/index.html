@@ -185,6 +185,11 @@
         .file-item .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .file-item .fsize, .file-item .fdate { color: var(--text-secondary); font-family: var(--font-mono); font-size: 0.75rem; }
         .file-item .ftype { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
+        .file-dir-sep { display: flex; align-items: center; gap: 6px; padding: 6px 14px 4px; font-size: 0.7rem; color: var(--text-secondary); border-top: 1px solid var(--border); background: var(--bg-tertiary); }
+        .file-dir-sep:first-child { border-top: none; }
+        .file-dir-sep .dir-icon { flex-shrink: 0; }
+        .file-dir-sep .dir-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+        .file-dir-sep .dir-date { flex-shrink: 0; margin-left: auto; opacity: 0.7; }
         .ftype.nsp { background: #1a3a5a; color: #58a6ff; }
         .ftype.nsz { background: #2d2a1a; color: #d29922; }
         .ftype.xci { background: #2d1a1a; color: #f85149; }
@@ -222,7 +227,7 @@
         .log-entry.log-error { color: var(--error); }
 
         /* 通知 */
-        .notice { padding: 10px 14px; border-radius: var(--radius); font-size: 0.8125rem; margin-bottom: 12px; display: flex; gap: 8px; border: 1px solid; }
+        .notice { padding: 10px 14px; border-radius: var(--radius); font-size: 0.8125rem; margin-bottom: 12px; display: flex; gap: 8px; border: 1px solid; word-break: break-all; }
         .notice-info { background: #1a2a3a; border-color: var(--accent); color: var(--accent); }
 
         .hidden { display: none !important; }
@@ -1119,6 +1124,14 @@
             _noticeTimer = setTimeout(() => { notice.style.display = 'none'; }, 5000);
         }
 
+        function showFilePath(path) {
+            showNotice(path, 'info');
+            // 尝试复制到剪贴板
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(path).catch(() => {});
+            }
+        }
+
         function getFilteredFiles() {
             if (!searchKeyword) return allFiles;
             const kw = searchKeyword.toLowerCase();
@@ -1152,7 +1165,20 @@
             const pageFiles = filtered.slice(start, start + pageSize);
 
             body.innerHTML = '';
+            let lastDir = null;
             pageFiles.forEach(f => {
+                // 目录分组标题
+                if (f.dir && f.dir !== lastDir) {
+                    lastDir = f.dir;
+                    const sep = document.createElement('div');
+                    sep.className = 'file-dir-sep';
+                    sep.innerHTML = `
+                        <i data-lucide="folder" class="dir-icon" style="width:14px;height:14px;"></i>
+                        <span class="dir-path" title="${escapeAttr(f.dir)}">${escapeHtml(f.dir)}</span>
+                        ${f.dir_mtime_str ? `<span class="dir-date">${f.dir_mtime_str}</span>` : ''}
+                    `;
+                    body.appendChild(sep);
+                }
                 const item = document.createElement('div');
                 item.className = 'file-item';
                 item.dataset.path = f.path;
@@ -1163,7 +1189,7 @@
                 item.innerHTML = `
                     <div class="checkbox ${isChecked ? 'checked' : ''}" onclick="toggleFile('${escapeAttr(f.path)}')"></div>
                     <div class="fname-cell" title="${escapeAttr(f.path)}">
-                        <span class="fname">${escapeHtml(f.name)}</span>
+                        <span class="fname" style="cursor:pointer;" onclick="event.stopPropagation();showFilePath('${escapeAttr(f.path)}')">${escapeHtml(f.name)}</span>
                         <span class="ftype ${typeClass}">${ext || 'file'}</span>
                     </div>
                     <div class="fsize">${formatSize(f.size)}</div>
