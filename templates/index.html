@@ -289,12 +289,14 @@
             .pagination-bar .spacer { display: none; }
             .pagination-bar #pageInfo { width: 100%; text-align: center; }
 
-            /* 上传列表 */
-            .upload-file-item { grid-template-columns: 28px 1fr auto; }
-            .upload-file-item .upload-file-size { display: none; }
+            /* 上传列表 - 整体横向滚动，不压缩 */
+            #transferList { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+            .transfer-card { min-width: 460px; }
+            .transfer-header { flex-wrap: nowrap; }
+            .transfer-files { overflow: visible; }
+            .upload-file-item { grid-template-columns: 32px minmax(140px, 1fr) auto auto; }
             .mini-progress { width: 60px; }
-            .transfer-header { flex-wrap: wrap; }
-            .transfer-overall-bar { width: 100%; flex-basis: 100%; margin-top: 4px; }
+            .transfer-overall-bar { flex: 1; min-width: 80px; }
 
             /* 文件列表 - 保持桌面布局，横向滚动 */
             .file-list-body { max-height: 400px; }
