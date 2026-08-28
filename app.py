@@ -32,6 +32,18 @@ _transfer_lock = threading.Lock()
 _ftp_status = {}
 _ftp_status_lock = threading.Lock()
 
+# 每个服务器实例的传输锁：同一实例串行，不同实例并行
+_server_locks = {}
+_server_locks_guard = threading.Lock()
+
+
+def _get_server_lock(server_name):
+    """获取或创建指定服务器的传输锁"""
+    with _server_locks_guard:
+        if server_name not in _server_locks:
+            _server_locks[server_name] = threading.Lock()
+        return _server_locks[server_name]
+
 
 # ============================================================
 # 配置管理
@@ -243,182 +255,197 @@ class FTPManager:
 
     @staticmethod
     def upload_files(task_id, server_info):
-        """在后台线程中上传文件（仅上传 pending 状态的文件，支持重试重连）"""
+        """在后台线程中上传文件（仅上传 pending 状态的文件，支持重试重连）
+        同一服务器实例串行，不同服务器实例并行。"""
         from ftplib import FTP, error_perm
         import socket
         task = _transfer_tasks[task_id]
+        server_name = task.get("server", "")
 
         # 收集所有 pending 状态的文件及其索引
         pending = [(idx, dict(f)) for idx, f in enumerate(task["files"]) if f["status"] == "pending"]
         total_bytes = sum(f["size"] for _, f in pending)
         task["total_bytes"] = total_bytes
         task["uploaded_bytes"] = 0
-        task["status"] = "transferring"
-        task["start_time"] = time.time()
-        task["current_file"] = ""
-        task["current_file_index"] = 0
-        task["current_file_bytes"] = 0
-        task["current_file_size"] = 0
         task["log"] = deque(maxlen=100)
 
-        # 速度计算 - 滑动窗口（60 个采样点 × 0.5s = 30 秒窗口）
-        speed_samples = deque(maxlen=60)
-        last_bytes = 0
-        last_time = time.time()
-
-        # 超时保护常量
-        CONNECT_TIMEOUT = 15
-        TRANSFER_TIMEOUT = 300       # 单次读写超时 5 分钟，支持大文件长时间传输
-        BLOCK_SIZE = 1048576         # 1MB 块，提升大文件吞吐量
-        KEEPALIVE_INTERVAL = 1.0     # 进度采样间隔（秒）
-
-        def log(msg, level="info"):
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            task["log"].append({"time": timestamp, "msg": msg, "level": level})
-
-        def connect_ftp():
-            """建立 FTP 连接并进入上传目录"""
-            f = FTP()
-            f.connect(server_info["host"], int(server_info["port"]), timeout=CONNECT_TIMEOUT)
-            f.login(server_info.get("username") or "anonymous",
-                    server_info.get("password") or "")
-            if f.sock:
-                # 启用 TCP keepalive，防止长时间传输时连接被路由/防火墙断开
-                f.sock.settimeout(TRANSFER_TIMEOUT)
-                f.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                # macOS: keepalive 间隔 60 秒，探测 3 次
-                if hasattr(socket, 'TCP_KEEPALIVE'):
-                    f.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPALIVE, 60)
-                elif hasattr(socket, 'TCP_KEEPIDLE'):
-                    f.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
-            upload_path = server_info.get("upload_path", "").strip()
-            if upload_path:
-                for part in upload_path.strip("/").split("/"):
-                    if part:
-                        try:
-                            f.cwd(part)
-                        except error_perm:
-                            try:
-                                f.mkd(part)
-                                f.cwd(part)
-                            except error_perm:
-                                pass
-            return f
-
-        first_file = True
-        ftp = None
-
+        # 获取服务器级锁：同一实例串行，不同实例并行
+        server_lock = _get_server_lock(server_name)
+        server_lock.acquire()
         try:
-            ftp = connect_ftp()
-            log(f"已连接到 {server_info['host']}:{server_info['port']}", "info")
-            upload_path = server_info.get("upload_path", "").strip()
-            if upload_path:
-                log(f"上传目录: {upload_path}", "info")
-
-            for idx, finfo in pending:
-                if task.get("cancelled"):
-                    log("传输已取消", "warning")
-                    break
-
-                # 只上传 pending 状态的文件
-                if task["files"][idx]["status"] != "pending":
-                    continue
-
-                # 文件之间发送 NOOP 心跳，失败则重连
-                if not first_file:
-                    try:
-                        ftp.voidcmd("NOOP")
-                    except Exception:
-                        log("心跳检测失败，尝试重连...", "warning")
-                        try:
-                            ftp = connect_ftp()
-                            log("重连成功", "success")
-                        except Exception as e:
-                            log(f"重连失败: {e}", "error")
-                            task["files"][idx]["status"] = "failed"
-                            task["files"][idx]["error"] = f"重连失败: {e}"
-                            continue
-                first_file = False
-
-                fname = finfo["name"]
-                fpath = finfo["path"]
-                fsize = finfo["size"]
-                task["current_file"] = fname
-                task["current_file_index"] = idx
-                task["current_file_bytes"] = 0
-                task["current_file_size"] = fsize
-                task["files"][idx]["status"] = "uploading"
-                task["files"][idx]["uploaded_bytes"] = 0
-                log(f"正在上传: {fname} ({_format_size(fsize)})", "info")
-
-                def callback(block, _task=task, _idx=idx, _fname=fname, _fsize=fsize):
-                    _task["current_file_bytes"] += len(block)
-                    _task["uploaded_bytes"] += len(block)
-                    _task["files"][_idx]["uploaded_bytes"] = _task["current_file_bytes"]
-                    _task["files"][_idx]["progress"] = round(_task["current_file_bytes"] / _fsize * 100, 1) if _fsize > 0 else 0
-                    nonlocal last_bytes, last_time
-                    now = time.time()
-                    dt = now - last_time
-                    if dt >= KEEPALIVE_INTERVAL:
-                        speed = (_task["uploaded_bytes"] - last_bytes) / dt
-                        speed_samples.append(speed)
-                        last_bytes = _task["uploaded_bytes"]
-                        last_time = now
-
-                try:
-                    with open(fpath, "rb") as f:
-                        # STOR 默认覆盖已存在的同名文件（FTP 行为）
-                        ftp.storbinary(f"STOR {fname}", f, blocksize=BLOCK_SIZE, callback=callback)
-                    # STOR 完成后，检查文件是否已被用户取消（不覆盖 cancelled 状态）
-                    if task["files"][idx]["status"] != "cancelled":
-                        task["files"][idx]["status"] = "completed"
-                        task["files"][idx]["progress"] = 100
-                        log(f"完成: {fname}", "success")
-                    else:
-                        log(f"已取消: {fname}", "warning")
-                except Exception as e:
-                    # 失败时不覆盖已取消的文件
-                    if task["files"][idx]["status"] != "cancelled":
-                        task["files"][idx]["status"] = "failed"
-                        task["files"][idx]["error"] = str(e)
-                        log(f"上传失败: {fname} - {e}", "error")
-                    # 重连以继续后续文件
-                    try:
-                        ftp = connect_ftp()
-                        log("重连成功，继续后续文件", "success")
-                    except Exception as re_err:
-                        log(f"重连失败: {re_err}", "error")
-
+            # 获取锁后再次检查任务是否已被取消
             if task.get("cancelled"):
                 task["status"] = "cancelled"
-            else:
-                task["status"] = "completed"
-                log("传输结束", "success")
+                task["end_time"] = time.time()
+                return
+
+            task["status"] = "transferring"
+            task["start_time"] = time.time()
+            task["current_file"] = ""
+            task["current_file_index"] = 0
+            task["current_file_bytes"] = 0
+            task["current_file_size"] = 0
+
+            # 速度计算 - 滑动窗口（60 个采样点 × 0.5s = 30 秒窗口）
+            speed_samples = deque(maxlen=60)
+            last_bytes = 0
+            last_time = time.time()
+
+            # 超时保护常量
+            CONNECT_TIMEOUT = 15
+            TRANSFER_TIMEOUT = 300       # 单次读写超时 5 分钟，支持大文件长时间传输
+            BLOCK_SIZE = 1048576         # 1MB 块，提升大文件吞吐量
+            KEEPALIVE_INTERVAL = 1.0     # 进度采样间隔（秒）
+
+            def log(msg, level="info"):
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                task["log"].append({"time": timestamp, "msg": msg, "level": level})
+
+            def connect_ftp():
+                """建立 FTP 连接并进入上传目录"""
+                f = FTP()
+                f.connect(server_info["host"], int(server_info["port"]), timeout=CONNECT_TIMEOUT)
+                f.login(server_info.get("username") or "anonymous",
+                        server_info.get("password") or "")
+                if f.sock:
+                    # 启用 TCP keepalive，防止长时间传输时连接被路由/防火墙断开
+                    f.sock.settimeout(TRANSFER_TIMEOUT)
+                    f.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                    # macOS: keepalive 间隔 60 秒，探测 3 次
+                    if hasattr(socket, 'TCP_KEEPALIVE'):
+                        f.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPALIVE, 60)
+                    elif hasattr(socket, 'TCP_KEEPIDLE'):
+                        f.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
+                upload_path = server_info.get("upload_path", "").strip()
+                if upload_path:
+                    for part in upload_path.strip("/").split("/"):
+                        if part:
+                            try:
+                                f.cwd(part)
+                            except error_perm:
+                                try:
+                                    f.mkd(part)
+                                    f.cwd(part)
+                                except error_perm:
+                                    pass
+                return f
+
+            first_file = True
+            ftp = None
+
             try:
-                ftp.quit()
-            except Exception:
-                pass
-        except Exception as e:
-            msg = str(e)
-            log(f"传输错误: {msg}", "error")
-            task["status"] = "error"
-            task["error"] = msg
-            # 将剩余 pending 文件标记为失败（可重试）
-            for idx, _ in pending:
-                if task["files"][idx]["status"] == "pending":
-                    task["files"][idx]["status"] = "failed"
-                    task["files"][idx]["error"] = msg
-            if ftp:
+                ftp = connect_ftp()
+                log(f"已连接到 {server_info['host']}:{server_info['port']}", "info")
+                upload_path = server_info.get("upload_path", "").strip()
+                if upload_path:
+                    log(f"上传目录: {upload_path}", "info")
+
+                for idx, finfo in pending:
+                    if task.get("cancelled"):
+                        log("传输已取消", "warning")
+                        break
+
+                    # 只上传 pending 状态的文件
+                    if task["files"][idx]["status"] != "pending":
+                        continue
+
+                    # 文件之间发送 NOOP 心跳，失败则重连
+                    if not first_file:
+                        try:
+                            ftp.voidcmd("NOOP")
+                        except Exception:
+                            log("心跳检测失败，尝试重连...", "warning")
+                            try:
+                                ftp = connect_ftp()
+                                log("重连成功", "success")
+                            except Exception as e:
+                                log(f"重连失败: {e}", "error")
+                                task["files"][idx]["status"] = "failed"
+                                task["files"][idx]["error"] = f"重连失败: {e}"
+                                continue
+                    first_file = False
+
+                    fname = finfo["name"]
+                    fpath = finfo["path"]
+                    fsize = finfo["size"]
+                    task["current_file"] = fname
+                    task["current_file_index"] = idx
+                    task["current_file_bytes"] = 0
+                    task["current_file_size"] = fsize
+                    task["files"][idx]["status"] = "uploading"
+                    task["files"][idx]["uploaded_bytes"] = 0
+                    log(f"正在上传: {fname} ({_format_size(fsize)})", "info")
+
+                    def callback(block, _task=task, _idx=idx, _fname=fname, _fsize=fsize):
+                        _task["current_file_bytes"] += len(block)
+                        _task["uploaded_bytes"] += len(block)
+                        _task["files"][_idx]["uploaded_bytes"] = _task["current_file_bytes"]
+                        _task["files"][_idx]["progress"] = round(_task["current_file_bytes"] / _fsize * 100, 1) if _fsize > 0 else 0
+                        nonlocal last_bytes, last_time
+                        now = time.time()
+                        dt = now - last_time
+                        if dt >= KEEPALIVE_INTERVAL:
+                            speed = (_task["uploaded_bytes"] - last_bytes) / dt
+                            speed_samples.append(speed)
+                            last_bytes = _task["uploaded_bytes"]
+                            last_time = now
+
+                    try:
+                        with open(fpath, "rb") as f:
+                            # STOR 默认覆盖已存在的同名文件（FTP 行为）
+                            ftp.storbinary(f"STOR {fname}", f, blocksize=BLOCK_SIZE, callback=callback)
+                        # STOR 完成后，检查文件是否已被用户取消（不覆盖 cancelled 状态）
+                        if task["files"][idx]["status"] != "cancelled":
+                            task["files"][idx]["status"] = "completed"
+                            task["files"][idx]["progress"] = 100
+                            log(f"完成: {fname}", "success")
+                        else:
+                            log(f"已取消: {fname}", "warning")
+                    except Exception as e:
+                        # 失败时不覆盖已取消的文件
+                        if task["files"][idx]["status"] != "cancelled":
+                            task["files"][idx]["status"] = "failed"
+                            task["files"][idx]["error"] = str(e)
+                            log(f"上传失败: {fname} - {e}", "error")
+                        # 重连以继续后续文件
+                        try:
+                            ftp = connect_ftp()
+                            log("重连成功，继续后续文件", "success")
+                        except Exception as re_err:
+                            log(f"重连失败: {re_err}", "error")
+
+                if task.get("cancelled"):
+                    task["status"] = "cancelled"
+                else:
+                    task["status"] = "completed"
+                    log("传输结束", "success")
                 try:
-                    ftp.close()
+                    ftp.quit()
                 except Exception:
                     pass
+            except Exception as e:
+                msg = str(e)
+                log(f"传输错误: {msg}", "error")
+                task["status"] = "error"
+                task["error"] = msg
+                # 将剩余 pending 文件标记为失败（可重试）
+                for idx, _ in pending:
+                    if task["files"][idx]["status"] == "pending":
+                        task["files"][idx]["status"] = "failed"
+                        task["files"][idx]["error"] = msg
+                if ftp:
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
+            finally:
+                task["end_time"] = time.time()
+                if task.get("start_time") and task.get("end_time"):
+                    elapsed = task["end_time"] - task["start_time"]
+                    if elapsed > 0:
+                        task["avg_speed"] = task["uploaded_bytes"] / elapsed
         finally:
-            task["end_time"] = time.time()
-            if task.get("start_time") and task.get("end_time"):
-                elapsed = task["end_time"] - task["start_time"]
-                if elapsed > 0:
-                    task["avg_speed"] = task["uploaded_bytes"] / elapsed
+            server_lock.release()
 
 
 def _format_size(num_bytes):
