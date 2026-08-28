@@ -1,0 +1,22 @@
+server:
+  host: 0.0.0.0
+  port: 8090
+scan_dirs:
+- /games
+scan_extensions:
+- .nsp
+- .nsz
+- .xci
+- .xcz
+scan_interval: 300
+ftp_servers:
+- name: Switch-1
+  host: 192.168.1.100
+  port: 5000
+  username: ftp
+  password: ''
+  upload_path: /switch/nsp
+ui_settings:
+  page_size: 20
+  show_all_files: false
+  language: en

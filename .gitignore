@@ -1,0 +1,8 @@
+README.md
+**/*.nsz
+**/*.dbi
+**/*.log
+**/*.err
+**/*.xci
+**/*.xcz
+**/*.nsp

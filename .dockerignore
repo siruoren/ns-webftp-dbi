@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+.github
+.env
+*.md
+LICENSE
+.venv
+venv
+screenshots
+games
+*.tar
+*.tar.gz
