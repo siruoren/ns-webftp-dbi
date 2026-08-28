@@ -2,7 +2,7 @@ server:
   host: 0.0.0.0
   port: 8090
 scan_dirs:
-- /app/games
+- ./games
 scan_extensions:
 - .nsp
 - .nsz
