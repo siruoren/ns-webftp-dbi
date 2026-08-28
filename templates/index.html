@@ -887,6 +887,8 @@
         let selectedUploadFiles = new Set();
         let transferPollTimer = null;
         let autoDeleteTimers = {};
+        let _pollingInProgress = false;
+        let _serverChangeTimer = null;
 
         // ============================================================
         // 初始化
@@ -1000,19 +1002,24 @@
             selectedUploadFiles.clear();
             const selectAllCb = document.getElementById('selectAllUploadsCheckbox');
             if (selectAllCb) selectAllCb.classList.remove('checked');
-            // 刷新上传列表（按当前实例隔离显示）
-            await loadTransfers();
-            // 如果有活跃任务（任意实例），启动轮询以实时更新进度
-            const res = await fetch('/api/transfers');
-            const data = await res.json();
-            const hasActive = (data.transfers || []).some(t =>
-                ['starting', 'transferring'].includes(t.status)
-            );
-            if (hasActive) {
-                startTransferPolling();
-            } else {
-                stopTransferPolling();
-            }
+            // 防抖：快速切换服务器时只执行最后一次
+            if (_serverChangeTimer) clearTimeout(_serverChangeTimer);
+            _serverChangeTimer = setTimeout(async () => {
+                _serverChangeTimer = null;
+                // 刷新上传列表（按当前实例隔离显示）
+                await loadTransfers();
+                // 如果有活跃任务（任意实例），启动轮询以实时更新进度
+                const res = await fetch('/api/transfers');
+                const data = await res.json();
+                const hasActive = (data.transfers || []).some(t =>
+                    ['starting', 'transferring'].includes(t.status)
+                );
+                if (hasActive) {
+                    startTransferPolling();
+                } else {
+                    stopTransferPolling();
+                }
+            }, 300);
         }
 
         async function checkFtpStatus() {
@@ -1453,7 +1460,7 @@
 
         function startTransferPolling() {
             stopTransferPolling();
-            transferPollTimer = setInterval(pollTransfers, 1000);
+            transferPollTimer = setInterval(pollTransfers, 2000);
         }
 
         function stopTransferPolling() {
@@ -1464,6 +1471,8 @@
         }
 
         async function pollTransfers() {
+            if (_pollingInProgress) return;
+            _pollingInProgress = true;
             try {
                 const res = await fetch('/api/transfers');
                 const data = await res.json();
@@ -1471,6 +1480,27 @@
                 const transfers = filterTransfersByServer(all);
                 renderTransfers(transfers);
                 updateUploadBadge(transfers);
+
+                // 清理过期选中状态：移除已不存在或已完成的文件选中
+                const visibleKeys = new Set();
+                transfers.forEach(tr => {
+                    (tr.files || []).forEach((f, i) => {
+                        if (['pending', 'uploading', 'failed'].includes(f.status)) {
+                            visibleKeys.add(`${tr.id}:${i}`);
+                        }
+                    });
+                });
+                for (const key of [...selectedUploadFiles]) {
+                    if (!visibleKeys.has(key)) selectedUploadFiles.delete(key);
+                }
+                // 清理不再存在的任务的自动删除定时器
+                const allIds = new Set(all.map(t => t.id));
+                for (const tid of Object.keys(autoDeleteTimers)) {
+                    if (!allIds.has(tid)) {
+                        clearTimeout(autoDeleteTimers[tid]);
+                        delete autoDeleteTimers[tid];
+                    }
+                }
 
                 // 自动删除：已终止且无失败文件的任务（延迟 3 秒）
                 const terminalStatuses = ['completed', 'error', 'cancelled'];
@@ -1500,6 +1530,8 @@
                 }
             } catch (e) {
                 console.error('Poll transfers failed:', e);
+            } finally {
+                _pollingInProgress = false;
             }
         }
 

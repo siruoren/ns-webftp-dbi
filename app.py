@@ -259,7 +259,7 @@ class FTPManager:
         task["current_file_index"] = 0
         task["current_file_bytes"] = 0
         task["current_file_size"] = 0
-        task["log"] = []
+        task["log"] = deque(maxlen=100)
 
         # 速度计算 - 滑动窗口（60 个采样点 × 0.5s = 30 秒窗口）
         speed_samples = deque(maxlen=60)
@@ -433,18 +433,31 @@ def _format_size(num_bytes):
 # ============================================================
 # 日志保留时长：24 小时
 LOG_RETENTION_SECONDS = 24 * 3600
+_MAX_TASKS = 200  # 最大任务条目数，超出后删除最旧的终端任务
 
 
 def cleanup_old_tasks():
-    """清理超过 24 小时的传输任务及其日志"""
+    """清理超过 24 小时的传输任务，限制总任务数"""
     now = time.time()
     with _transfer_lock:
+        # 清理超时终端任务
         to_remove = [
             tid for tid, task in _transfer_tasks.items()
             if task.get("end_time") and (now - task["end_time"]) > LOG_RETENTION_SECONDS
         ]
         for tid in to_remove:
             del _transfer_tasks[tid]
+        # 超过最大数量时删除最旧的终端任务
+        if len(_transfer_tasks) > _MAX_TASKS:
+            terminal = [
+                (tid, task.get("end_time", 0))
+                for tid, task in _transfer_tasks.items()
+                if task.get("status") in ("completed", "error", "cancelled")
+            ]
+            terminal.sort(key=lambda x: x[1])
+            excess = len(_transfer_tasks) - _MAX_TASKS
+            for tid, _ in terminal[:excess]:
+                del _transfer_tasks[tid]
 
 
 # ============================================================
@@ -806,7 +819,7 @@ def transfer_status(task_id):
         "current_file_progress": round(
             (task["current_file_bytes"] / task["current_file_size"] * 100), 1
         ) if task["current_file_size"] > 0 else 0,
-        "log": task["log"][-50:],
+        "log": list(task["log"])[-50:],
         "avg_speed": task.get("avg_speed", 0),
         "error": task.get("error", ""),
         "files": task.get("files", []),
@@ -820,6 +833,9 @@ def cancel_transfer(task_id):
     if not task:
         return jsonify({"error": "任务不存在"}), 404
     task["cancelled"] = True
+    if not task.get("end_time"):
+        task["end_time"] = time.time()
+        task["status"] = "cancelled"
     return jsonify({"ok": True})
 
 
