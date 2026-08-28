@@ -297,10 +297,11 @@ class FTPManager:
             last_time = time.time()
 
             # 超时保护常量
-            CONNECT_TIMEOUT = 15
-            TRANSFER_TIMEOUT = 300       # 单次读写超时 5 分钟，支持大文件长时间传输
-            BLOCK_SIZE = 1048576         # 1MB 块，提升大文件吞吐量
-            KEEPALIVE_INTERVAL = 1.0     # 进度采样间隔（秒）
+            CONNECT_TIMEOUT = 15       # FTP 连接建立超时
+            STALL_TIMEOUT = 120        # 进度停滞超时：120 秒无数据传输则判定超时
+            BLOCK_SIZE = 1048576       # 1MB 块，提升大文件吞吐量
+            KEEPALIVE_INTERVAL = 1.0   # 进度采样间隔（秒）
+            MAX_RETRIES = 3            # 单文件最大重试次数
 
             def log(msg, level="info"):
                 timestamp = datetime.now().strftime("%H:%M:%S")
@@ -312,9 +313,11 @@ class FTPManager:
                 f.connect(server_info["host"], int(server_info["port"]), timeout=CONNECT_TIMEOUT)
                 f.login(server_info.get("username") or "anonymous",
                         server_info.get("password") or "")
+                # 关键：设置 f.timeout = None，使后续数据连接（STOR）也不设超时
+                f.timeout = None
                 if f.sock:
-                    # 启用 TCP keepalive，防止长时间传输时连接被路由/防火墙断开
-                    f.sock.settimeout(TRANSFER_TIMEOUT)
+                    # 控制连接不设超时，依赖应用层看门狗检测停滞
+                    f.sock.settimeout(None)
                     f.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                     # macOS: keepalive 间隔 60 秒，探测 3 次
                     if hasattr(socket, 'TCP_KEEPALIVE'):
@@ -337,9 +340,43 @@ class FTPManager:
 
             first_file = True
             ftp = None
+            # 使用可变容器让看门狗线程能引用当前 ftp 对象
+            ftp_holder = [None]
+            # 看门狗状态
+            stall_event = threading.Event()
+            wd_active = threading.Event()
+
+            def watchdog():
+                """监控传输进度，STALL_TIMEOUT 秒无进展则关闭 socket 中断传输"""
+                last_progress = -1
+                stall_start = None
+                while wd_active.is_set() and not stall_event.is_set():
+                    time.sleep(5)
+                    if not wd_active.is_set():
+                        break
+                    current = task.get("current_file_bytes", 0)
+                    if current != last_progress:
+                        last_progress = current
+                        stall_start = None
+                    else:
+                        if stall_start is None:
+                            stall_start = time.time()
+                        elif time.time() - stall_start >= STALL_TIMEOUT:
+                            log(f"传输停滞 {STALL_TIMEOUT} 秒，判定超时", "error")
+                            stall_event.set()
+                            # 关闭 socket 中断阻塞的 storbinary
+                            try:
+                                f_ref = ftp_holder[0]
+                                if f_ref and f_ref.sock:
+                                    f_ref.sock.shutdown(socket.SHUT_RDWR)
+                                    f_ref.sock.close()
+                            except Exception:
+                                pass
+                            break
 
             try:
                 ftp = connect_ftp()
+                ftp_holder[0] = ftp
                 log(f"已连接到 {server_info['host']}:{server_info['port']}", "info")
                 upload_path = server_info.get("upload_path", "").strip()
                 if upload_path:
@@ -362,6 +399,7 @@ class FTPManager:
                             log("心跳检测失败，尝试重连...", "warning")
                             try:
                                 ftp = connect_ftp()
+                                ftp_holder[0] = ftp
                                 log("重连成功", "success")
                             except Exception as e:
                                 log(f"重连失败: {e}", "error")
@@ -375,10 +413,9 @@ class FTPManager:
                     fsize = finfo["size"]
                     task["current_file"] = fname
                     task["current_file_index"] = idx
-                    task["current_file_bytes"] = 0
                     task["current_file_size"] = fsize
-                    task["files"][idx]["status"] = "uploading"
                     task["files"][idx]["uploaded_bytes"] = 0
+                    task["files"][idx]["progress"] = 0
                     log(f"正在上传: {fname} ({_format_size(fsize)})", "info")
 
                     def callback(block, _task=task, _idx=idx, _fname=fname, _fsize=fsize):
@@ -395,26 +432,63 @@ class FTPManager:
                             last_bytes = _task["uploaded_bytes"]
                             last_time = now
 
-                    try:
-                        with open(fpath, "rb") as f:
-                            # STOR 默认覆盖已存在的同名文件（FTP 行为）
-                            ftp.storbinary(f"STOR {fname}", f, blocksize=BLOCK_SIZE, callback=callback)
-                        # STOR 完成后，检查文件是否已被用户取消（不覆盖 cancelled 状态）
-                        if task["files"][idx]["status"] != "cancelled":
-                            task["files"][idx]["status"] = "completed"
-                            task["files"][idx]["progress"] = 100
-                            log(f"完成: {fname}", "success")
-                        else:
-                            log(f"已取消: {fname}", "warning")
-                    except Exception as e:
-                        # 失败时不覆盖已取消的文件
-                        if task["files"][idx]["status"] != "cancelled":
-                            task["files"][idx]["status"] = "failed"
-                            task["files"][idx]["error"] = str(e)
-                            log(f"上传失败: {fname} - {e}", "error")
+                    # 带重试的上传逻辑
+                    file_done = False
+                    for attempt in range(1, MAX_RETRIES + 1):
+                        if task.get("cancelled"):
+                            break
+                        stall_event.clear()
+                        wd_active.set()
+                        task["current_file_bytes"] = 0
+                        task["files"][idx]["status"] = "uploading"
+                        task["files"][idx]["uploaded_bytes"] = 0
+                        task["files"][idx]["progress"] = 0
+                        wd_thread = threading.Thread(target=watchdog, daemon=True)
+                        wd_thread.start()
+                        try:
+                            with open(fpath, "rb") as f:
+                                ftp.storbinary(f"STOR {fname}", f, blocksize=BLOCK_SIZE, callback=callback)
+                            # STOR 完成后，检查文件是否已被用户取消
+                            if task["files"][idx]["status"] != "cancelled":
+                                task["files"][idx]["status"] = "completed"
+                                task["files"][idx]["progress"] = 100
+                                log(f"完成: {fname}", "success")
+                            else:
+                                log(f"已取消: {fname}", "warning")
+                            file_done = True
+                            break
+                        except Exception as e:
+                            is_stall = stall_event.is_set()
+                            if is_stall:
+                                log(f"传输停滞超时: {fname} (第 {attempt}/{MAX_RETRIES} 次)", "warning")
+                            else:
+                                log(f"上传异常: {fname} - {e} (第 {attempt}/{MAX_RETRIES} 次)", "warning")
+                            if attempt < MAX_RETRIES and not task.get("cancelled") and task["files"][idx]["status"] != "cancelled":
+                                # 重连并重试
+                                try:
+                                    ftp = connect_ftp()
+                                    ftp_holder[0] = ftp
+                                    log(f"重连成功，重试 {fname}", "success")
+                                except Exception as re_err:
+                                    log(f"重连失败: {re_err}", "error")
+                                    task["files"][idx]["status"] = "failed"
+                                    task["files"][idx]["error"] = f"重连失败: {re_err}"
+                                    break
+                            else:
+                                # 已达最大重试次数或已取消
+                                if task["files"][idx]["status"] != "cancelled":
+                                    task["files"][idx]["status"] = "failed"
+                                    task["files"][idx]["error"] = str(e) if not is_stall else f"传输停滞超时（{STALL_TIMEOUT}秒无进展）"
+                                    log(f"上传失败: {fname} - {task['files'][idx]['error']}", "error")
+                        finally:
+                            wd_active.clear()
+                            stall_event.clear()
+
+                    if not file_done and not task.get("cancelled"):
                         # 重连以继续后续文件
                         try:
                             ftp = connect_ftp()
+                            ftp_holder[0] = ftp
                             log("重连成功，继续后续文件", "success")
                         except Exception as re_err:
                             log(f"重连失败: {re_err}", "error")
@@ -950,4 +1024,5 @@ if __name__ == "__main__":
     print(f"扫描目录: {cfg.get('scan_dirs', [])}")
     print(f"FTP 服务器: {[s['name'] for s in cfg.get('ftp_servers', [])]}")
     # debug 模式下也禁用 reloader，避免 config.yml 变化时重启
-    app.run(host=host, port=port, debug=debug, use_reloader=False)
+    # threaded=True 允许并发处理请求，防止多终端刷新时请求排队影响上传
+    app.run(host=host, port=port, debug=debug, use_reloader=False, threaded=True)
