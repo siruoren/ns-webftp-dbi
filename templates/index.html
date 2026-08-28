@@ -1453,11 +1453,13 @@
 
         function updateUploadBadge(transfers) {
             const badge = document.getElementById('uploadBadge');
-            const activeCount = transfers.filter(t =>
-                ['starting', 'transferring'].includes(t.status)
-            ).length;
-            if (activeCount > 0) {
-                badge.textContent = activeCount;
+            const VISIBLE_STATUSES = ['pending', 'uploading', 'failed'];
+            let totalCount = 0;
+            transfers.forEach(tr => {
+                totalCount += (tr.files || []).filter(f => VISIBLE_STATUSES.includes(f.status)).length;
+            });
+            if (totalCount > 0) {
+                badge.textContent = totalCount;
                 badge.style.display = 'inline-flex';
             } else {
                 badge.style.display = 'none';

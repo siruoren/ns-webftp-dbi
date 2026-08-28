@@ -19,4 +19,4 @@ ftp_servers:
 ui_settings:
   page_size: 20
   show_all_files: false
-  language: en
+  language: zh
