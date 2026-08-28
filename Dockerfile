@@ -24,6 +24,6 @@ ENV PORT=8090
 EXPOSE 8090
 
 # 挂载点：/games 用于扫描 Switch 安装包，/app/config.yml 用于持久化配置
-VOLUME ["/games", "/app/config.yml"]
+VOLUME ["./games", "./config.yml"]
 
 CMD ["python", "app.py"]
