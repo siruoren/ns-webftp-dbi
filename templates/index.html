@@ -853,13 +853,14 @@
             await loadUiSettings();
             applyI18n();
             lucide.createIcons();
-            await loadConfig();
-            await loadFiles();
-            // 加载上传列表，如果有活跃任务则开始轮询
-            await loadTransfers();
-            const res = await fetch('/api/transfers');
-            const data = await res.json();
-            const hasActive = (data.transfers || []).some(t =>
+            // 并行加载配置、文件列表、上传列表
+            const [, , allTransfers] = await Promise.all([
+                loadConfig(),
+                loadFiles(),
+                loadTransfers(),
+            ]);
+            // 使用 loadTransfers 返回的数据检查活跃任务，避免重复请求
+            const hasActive = (allTransfers || []).some(t =>
                 ['starting', 'transferring'].includes(t.status)
             );
             if (hasActive) {
@@ -962,12 +963,9 @@
             if (_serverChangeTimer) clearTimeout(_serverChangeTimer);
             _serverChangeTimer = setTimeout(async () => {
                 _serverChangeTimer = null;
-                // 刷新上传列表（按当前实例隔离显示）
-                await loadTransfers();
-                // 如果有活跃任务（任意实例），启动轮询以实时更新进度
-                const res = await fetch('/api/transfers');
-                const data = await res.json();
-                const hasActive = (data.transfers || []).some(t =>
+                // 刷新上传列表（按当前实例隔离显示），并使用返回数据检查活跃任务
+                const all = await loadTransfers();
+                const hasActive = (all || []).some(t =>
                     ['starting', 'transferring'].includes(t.status)
                 );
                 if (hasActive) {
@@ -1330,8 +1328,10 @@
                 const filtered = filterTransfersByServer(all);
                 renderTransfers(filtered);
                 updateUploadBadge(filtered);
+                return all;
             } catch (e) {
                 console.error('Load transfers failed:', e);
+                return [];
             }
         }
 
@@ -1573,13 +1573,13 @@
             });
 
             try {
-                for (const [taskId, indices] of Object.entries(grouped)) {
-                    await fetch(`/api/transfer/${taskId}/cancel-files`, {
+                await Promise.all(Object.entries(grouped).map(([taskId, indices]) =>
+                    fetch(`/api/transfer/${taskId}/cancel-files`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ file_indices: indices })
-                    });
-                }
+                    })
+                ));
                 selectedUploadFiles.clear();
                 log(t('log_cancelling'), 'warning');
                 await loadTransfers();
@@ -1601,13 +1601,13 @@
             });
 
             try {
-                for (const [taskId, indices] of Object.entries(grouped)) {
-                    await fetch(`/api/transfer/${taskId}/retry-files`, {
+                await Promise.all(Object.entries(grouped).map(([taskId, indices]) =>
+                    fetch(`/api/transfer/${taskId}/retry-files`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ file_indices: indices })
-                    });
-                }
+                    })
+                ));
                 selectedUploadFiles.clear();
                 log(t('log_retrying'), 'success');
                 await loadTransfers();
