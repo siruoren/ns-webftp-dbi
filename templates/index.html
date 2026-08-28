@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Switch DBI FTP 传输工具 / Switch DBI FTP Transfer Tool</title>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <style>
         :root {
             --bg: #0d1117;
@@ -535,6 +534,26 @@
 
     <script>
         // ============================================================
+        // lucide 图标加载（异步，不阻塞渲染）
+        // ============================================================
+        let _lucideReady = false;
+        function loadLucide() {
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/lucide@latest/dist/umd/lucide.min.js';
+            s.onload = () => {
+                _lucideReady = true;
+                safeCreateIcons();
+            };
+            s.onerror = () => console.error('lucide CDN load failed');
+            document.head.appendChild(s);
+        }
+        function safeCreateIcons() {
+            if (_lucideReady && typeof lucide !== 'undefined') {
+                try { lucide.createIcons(); } catch (e) { console.error('lucide createIcons failed:', e); }
+            }
+        }
+
+        // ============================================================
         // i18n 多语言
         // ============================================================
         const I18N = {
@@ -806,7 +825,7 @@
                 const body = document.getElementById('fileListBody');
                 if (body.querySelector('.empty-state')) {
                     body.innerHTML = `<div class="empty-state"><i data-lucide="folder-x"></i><p>${t('no_files')}</p><p style="font-size:0.75rem;margin-top:4px;">${t('no_files_hint')}</p></div>`;
-                    lucide.createIcons();
+                    safeCreateIcons();
                 }
             }
         }
@@ -816,7 +835,7 @@
             localStorage.setItem('lang', currentLang);
             saveUiSettings();
             applyI18n();
-            lucide.createIcons();
+            safeCreateIcons();
         }
 
         function renderHelp() {
@@ -850,16 +869,17 @@
         // 初始化
         // ============================================================
         async function init() {
-            await loadUiSettings();
-            applyI18n();
-            lucide.createIcons();
+            try { await loadUiSettings(); } catch (e) { console.error('loadUiSettings failed:', e); }
+            try { applyI18n(); } catch (e) { console.error('applyI18n failed:', e); }
+            try { safeCreateIcons(); } catch (e) { console.error('lucide createIcons failed:', e); }
             // 并行加载配置、文件列表、上传列表
-            const [, , allTransfers] = await Promise.all([
+            const results = await Promise.allSettled([
                 loadConfig(),
                 loadFiles(),
                 loadTransfers(),
             ]);
-            // 使用 loadTransfers 返回的数据检查活跃任务，避免重复请求
+            // 使用 loadTransfers 返回的数据检查活跃任务
+            const allTransfers = results[2].status === 'fulfilled' ? results[2].value : [];
             const hasActive = (allTransfers || []).some(t =>
                 ['starting', 'transferring'].includes(t.status)
             );
@@ -1058,17 +1078,32 @@
                 const data = await res.json();
 
                 if (data.scanning) {
-                    // 后台已有扫描任务在运行，恢复原文件列表
-                    allFiles = prevFiles;
-                    renderFileList();
+                    // 后台扫描进行中，轮询 scan-status 直到完成
                     log(t('scan_in_progress'), 'warn');
-                    showNotice(t('scan_in_progress'), 'warn');
-                } else {
-                    // 扫描完成
-                    allFiles = data.files || [];
-                    currentPage = 1;
-                    renderFileList();
-                    log(t('log_scan_done', { n: allFiles.length }), 'success');
+                    const checkScan = async () => {
+                        try {
+                            const sr = await fetch('/api/files/scan-status');
+                            const sd = await sr.json();
+                            if (!sd.scanning) {
+                                // 扫描完成，加载新文件列表
+                                await loadFiles();
+                                log(t('log_scan_done', { n: allFiles.length }), 'success');
+                                // 恢复刷新按钮
+                                if (refreshBtn) {
+                                    refreshBtn.style.opacity = '';
+                                    refreshBtn.style.pointerEvents = '';
+                                    const icon = refreshBtn.querySelector('[data-lucide]');
+                                    if (icon) icon.style.animation = '';
+                                }
+                            } else {
+                                setTimeout(checkScan, 1000);
+                            }
+                        } catch (e) {
+                            log(t('log_scan_failed') + e.message, 'error');
+                        }
+                    };
+                    setTimeout(checkScan, 1000);
+                    return;
                 }
             } catch (e) {
                 allFiles = prevFiles;
@@ -1117,7 +1152,7 @@
 
             if (allFiles.length === 0) {
                 body.innerHTML = `<div class="empty-state"><i data-lucide="folder-x"></i><p>${t('no_files')}</p><p style="font-size:0.75rem;margin-top:4px;">${t('no_files_hint')}</p></div>`;
-                lucide.createIcons();
+                safeCreateIcons();
                 updatePagination(0);
                 updateFileCount();
                 return;
@@ -1125,7 +1160,7 @@
 
             if (filtered.length === 0) {
                 body.innerHTML = `<div class="empty-state"><i data-lucide="search-x"></i><p>${t('no_search_results')}</p></div>`;
-                lucide.createIcons();
+                safeCreateIcons();
                 updatePagination(0);
                 updateFileCount();
                 return;
@@ -1444,7 +1479,7 @@
 
             if (visibleTransfers.length === 0) {
                 list.innerHTML = `<div class="empty-state"><i data-lucide="upload-cloud"></i><p>${t('no_transfers')}</p></div>`;
-                lucide.createIcons();
+                safeCreateIcons();
                 document.getElementById('uploadCount').textContent = '';
                 document.getElementById('btnCancelSelected').disabled = true;
                 document.getElementById('btnRetrySelected').disabled = true;
@@ -1507,8 +1542,7 @@
                 `;
                 list.appendChild(card);
             });
-            lucide.createIcons();
-
+            safeCreateIcons();
             // 更新按钮状态
             updateUploadToolbarButtons();
         }
@@ -1696,7 +1730,7 @@
                 `;
                 body.appendChild(item);
             });
-            lucide.createIcons();
+            safeCreateIcons();
         }
 
         async function deleteServer(name) {
@@ -1750,7 +1784,7 @@
                 `;
                 body.appendChild(item);
             });
-            lucide.createIcons();
+            safeCreateIcons();
         }
 
         async function addScanDir() {
@@ -1852,7 +1886,8 @@
             }
         });
 
-        // 启动
+        // 启动：异步加载 lucide 图标，不阻塞页面渲染
+        loadLucide();
         init();
     </script>
 </body>

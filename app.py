@@ -183,10 +183,11 @@ class FileScanManager:
             self._thread.join(timeout=5)
 
     def _auto_loop(self, interval):
-        """定时扫描循环"""
+        """定时扫描循环，首次立即执行"""
         while not self._stop_event.is_set():
             try:
                 self.do_scan()
+                print(f"扫描完成: {len(self._cached_files)} 个安装包")
             except Exception as e:
                 print(f"[FileScanManager] auto scan error: {e}")
             self._stop_event.wait(interval)
@@ -200,8 +201,14 @@ class FileScanManager:
             cfg = ConfigManager.load()
             scan_dirs = cfg.get("scan_dirs", [])
             exts = cfg.get("scan_extensions", DEFAULT_EXTENSIONS)
-            self._cached_files = FileScanner.scan(scan_dirs, exts, show_all=False)
-            self._cached_all_files = FileScanner.scan(scan_dirs, exts, show_all=True)
+            # 只扫描一次 show_all=True，然后过滤出安装包列表
+            all_results = FileScanner.scan(scan_dirs, exts, show_all=True)
+            ext_set = {e.lower() for e in exts}
+            self._cached_all_files = all_results
+            self._cached_files = [
+                f for f in all_results
+                if os.path.splitext(f["name"])[1].lower() in ext_set
+            ]
             self._last_scan_time = time.time()
             return True
         finally:
@@ -540,14 +547,12 @@ def rescan_files():
             "message": "刷新任务进行中",
             "total": len(mgr.get_files()),
         })
-    # 执行扫描（同步等待完成）
-    mgr.do_scan()
-    show_all = request.args.get("all", "false").lower() == "true"
-    files = mgr.get_files(show_all=show_all)
+    # 触发后台扫描（不阻塞请求），前端轮询 scan-status 获取结果
+    threading.Thread(target=mgr.do_scan, daemon=True).start()
     return jsonify({
-        "files": files,
-        "total": len(files),
-        "scanning": False,
+        "scanning": True,
+        "message": "刷新任务已启动",
+        "total": len(mgr.get_files()),
         "last_scan_time": mgr.last_scan_time,
     })
 
@@ -932,20 +937,17 @@ if __name__ == "__main__":
     cfg = ConfigManager.load()
     host = os.environ.get("HOST", cfg.get("server", {}).get("host", "0.0.0.0"))
     port = int(os.environ.get("PORT", cfg.get("server", {}).get("port", 8090)))
-    debug = os.environ.get("FLASK_DEBUG", "1") == "1"
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
 
-    # 启动时执行初始扫描
+    # 启动后台扫描（不阻塞启动，首次扫描在后台线程完成）
     scan_mgr = FileScanManager.get()
-    scan_mgr.do_scan()
-    print(f"初始扫描完成: {len(scan_mgr.get_files())} 个安装包")
-
-    # 启动定时后台扫描（默认 300 秒）
     scan_interval = int(cfg.get("scan_interval", 300))
     scan_mgr.start_auto_scan(scan_interval)
-    print(f"定时扫描已启动: 每 {scan_interval} 秒刷新一次")
+    print(f"后台扫描已启动: 每 {scan_interval} 秒刷新一次")
 
     print(f"Switch DBI FTP 传输工具启动中...")
     print(f"访问地址: http://localhost:{port}")
     print(f"扫描目录: {cfg.get('scan_dirs', [])}")
     print(f"FTP 服务器: {[s['name'] for s in cfg.get('ftp_servers', [])]}")
-    app.run(host=host, port=port, debug=debug)
+    # debug 模式下也禁用 reloader，避免 config.yml 变化时重启
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
