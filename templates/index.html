@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Switch DBI FTP 传输工具</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #1c2129;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79b8ff;
+            --success: #3fb950;
+            --success-bg: #1a2e1a;
+            --error: #f85149;
+            --error-bg: #2d1a1a;
+            --warning: #d29922;
+            --warning-bg: #2d2a1a;
+            --radius: 8px;
+            --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+            --font-sans: -apple-system, 'BlinkMacSystemFont', 'Segoe UI', sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 960px;
+            width: 100%;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        }
+        h1 { font-size: 1.5rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+        .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .header-row h1 { margin-bottom: 0; }
+        .subtitle { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 20px; }
+        .lucide { width: 16px; height: 16px; }
+        h1 .lucide { width: 22px; height: 22px; }
+        .section-title { font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+
+        /* FTP 服务器选择栏 */
+        .ftp-bar {
+            display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+            background: var(--bg-tertiary); border-radius: var(--radius); margin-bottom: 16px;
+            border: 1px solid var(--border); flex-wrap: wrap;
+        }
+        .ftp-select-wrap { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px; }
+        .ftp-select {
+            background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); padding: 6px 28px 6px 10px; font-size: 0.875rem; cursor: pointer;
+            appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; min-width: 160px;
+        }
+        .ftp-select:hover { border-color: var(--accent); }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-secondary); flex-shrink: 0; }
+        .status-dot.connected { background: var(--success); box-shadow: 0 0 8px rgba(63,185,80,0.5); animation: pulse 2s infinite; }
+        .status-dot.error { background: var(--error); box-shadow: 0 0 8px rgba(248,81,73,0.4); }
+        .status-dot.checking { background: var(--warning); animation: pulse 0.8s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .status-text { font-size: 0.8rem; color: var(--text-secondary); }
+        .status-text.connected { color: var(--success); }
+        .status-text.error { color: var(--error); }
+
+        /* 按钮 */
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-tertiary); color: var(--text); font-size: 0.875rem; cursor: pointer; transition: all 0.2s; user-select: none; white-space: nowrap; }
+        .btn:hover { background: var(--bg-secondary); border-color: var(--accent); color: var(--accent); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+        .btn-primary:hover { background: var(--accent-hover); color: #000; }
+        .btn-success { background: var(--success); border-color: var(--success); color: #000; font-weight: 600; }
+        .btn-success:hover { opacity: 0.9; color: #000; }
+        .btn-danger { border-color: var(--error); color: var(--error); }
+        .btn-danger:hover { background: var(--error-bg); color: var(--error); }
+        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+        .btn-icon { padding: 6px; border-radius: 50%; width: 32px; height: 32px; justify-content: center; flex-shrink: 0; }
+
+        /* 标签页 */
+        .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+        .tab { padding: 8px 16px; cursor: pointer; color: var(--text-secondary); border-bottom: 2px solid transparent; background: none; border: none; border-bottom: 2px solid transparent; font-family: var(--font-sans); font-size: 0.875rem; }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* 工具栏 */
+        .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .toolbar .spacer { flex: 1; }
+        .file-count { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* 文件列表 */
+        .file-list-header, .file-item {
+            display: grid; grid-template-columns: 32px 1fr 100px 90px 120px 40px;
+            align-items: center; gap: 10px; padding: 8px 14px;
+        }
+        .file-list-header {
+            background: var(--bg-tertiary); border-radius: var(--radius) var(--radius) 0 0;
+            font-size: 0.75rem; color: var(--text-secondary); font-weight: 600;
+            text-transform: uppercase; border: 1px solid var(--border); border-bottom: none;
+        }
+        .file-list-body { border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); max-height: 480px; overflow-y: auto; }
+        .file-item { border-bottom: 1px solid var(--border); font-size: 0.8125rem; transition: background 0.15s; }
+        .file-item:last-child { border-bottom: none; }
+        .file-item:hover { background: var(--bg-tertiary); }
+        .file-item.uploading { background: var(--accent-bg, #1a2a3a); }
+        .file-item.done { opacity: 0.5; }
+        .file-item .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-item .fsize, .file-item .fdate { color: var(--text-secondary); font-family: var(--font-mono); font-size: 0.75rem; }
+        .file-item .ftype { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; text-transform: uppercase; }
+        .ftype.nsp { background: #1a3a5a; color: #58a6ff; }
+        .ftype.nsz { background: #2d2a1a; color: #d29922; }
+        .ftype.xci { background: #2d1a1a; color: #f85149; }
+        .ftype.xcz { background: #1a2e1a; color: #3fb950; }
+
+        /* 复选框 */
+        .checkbox {
+            width: 18px; height: 18px; border: 2px solid var(--border); border-radius: 4px;
+            cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+            transition: all 0.15s; flex-shrink: 0;
+        }
+        .checkbox:hover { border-color: var(--accent); }
+        .checkbox.checked { background: var(--accent); border-color: var(--accent); }
+        .checkbox.checked::after { content: '✓'; color: #000; font-size: 12px; font-weight: bold; }
+        .checkbox.indeterminate { background: var(--accent); border-color: var(--accent); }
+        .checkbox.indeterminate::after { content: '−'; color: #000; font-size: 14px; font-weight: bold; }
+
+        /* 进度条 */
+        .progress-container { margin-top: 16px; display: none; }
+        .progress-container.active { display: block; }
+        .progress-bar-track { width: 100%; height: 8px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+        .progress-bar-fill { height: 100%; background: repeating-linear-gradient(45deg, var(--accent) 0, var(--accent) 10px, #1a6bc4 10px, #1a6bc4 20px); background-size: 28px 100%; animation: slide 1s linear infinite; transition: width 0.3s; width: 0%; }
+        .progress-bar-fill.complete { background: var(--success); animation: none; }
+        .progress-bar-fill.error { background: var(--error); animation: none; }
+        @keyframes slide { 0% { background-position: 0 0; } 100% { background-position: 28px 0; } }
+        .progress-stats { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); margin-top: 6px; flex-wrap: wrap; gap: 4px; }
+        .progress-file { font-size: 0.8rem; color: var(--text); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* 日志区域 */
+        .log-area { margin-top: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-family: var(--font-mono); font-size: 0.75rem; max-height: 250px; overflow-y: auto; white-space: pre-wrap; }
+        .log-entry { padding: 1px 0; }
+        .log-entry.log-success { color: var(--success); }
+        .log-entry.log-warning { color: var(--warning); }
+        .log-entry.log-error { color: var(--error); }
+
+        /* 通知 */
+        .notice { padding: 10px 14px; border-radius: var(--radius); font-size: 0.8125rem; margin-bottom: 12px; display: flex; gap: 8px; border: 1px solid; }
+        .notice-info { background: #1a2a3a; border-color: var(--accent); color: var(--accent); }
+        .notice-warning { background: var(--warning-bg); border-color: var(--warning); color: var(--warning); }
+
+        .hidden { display: none !important; }
+
+        /* 模态框 */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+        .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); max-width: 520px; width: 100%; padding: 24px; box-shadow: 0 8px 40px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
+        .modal h2 { font-size: 1.125rem; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .modal label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; }
+        .modal input, .modal select {
+            width: 100%; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 6px; color: var(--text); font-size: 0.875rem; font-family: var(--font-sans);
+        }
+        .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); }
+        .modal .form-row { margin-bottom: 12px; }
+        .modal .form-row-2col { display: flex; gap: 12px; }
+        .modal .form-row-2col > div { flex: 1; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+        /* 空状态 */
+        .empty-state { text-align: center; padding: 48px 20px; color: var(--text-secondary); }
+        .empty-state .lucide { width: 48px; height: 48px; opacity: 0.3; margin-bottom: 12px; }
+
+        /* 服务器列表 */
+        .server-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-tertiary); border-radius: var(--radius); margin-bottom: 8px; border: 1px solid var(--border); }
+        .server-item .server-info { flex: 1; }
+        .server-item .server-name { font-weight: 600; font-size: 0.875rem; }
+        .server-item .server-detail { font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-mono); }
+        .server-item .server-actions { display: flex; align-items: center; gap: 8px; }
+
+        /* 加载动画 */
+        .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header-row">
+            <h1><i data-lucide="send"></i> Switch DBI FTP 传输工具</h1>
+            <button class="btn btn-icon" onclick="rescanFiles()" title="刷新文件列表"><i data-lucide="refresh-cw"></i></button>
+        </div>
+        <p class="subtitle">自动扫描目录 · 多文件勾选 · FTP 传输到 Switch DBI</p>
+
+        <!-- FTP 服务器选择栏 -->
+        <div class="ftp-bar">
+            <div class="ftp-select-wrap">
+                <select class="ftp-select" id="ftpSelect" onchange="onServerChange()"></select>
+                <span class="status-dot" id="ftpStatusDot"></span>
+                <span class="status-text" id="ftpStatusText">未检测</span>
+            </div>
+            <button class="btn btn-sm" onclick="checkFtpStatus()" id="btnCheckFtp"><i data-lucide="wifi"></i> 测试连接</button>
+            <button class="btn btn-sm" onclick="openAddServerModal()"><i data-lucide="plus"></i> 添加</button>
+            <button class="btn btn-sm" onclick="openServerListModal()" title="管理服务器"><i data-lucide="settings"></i> 管理</button>
+        </div>
+
+        <!-- 通知 -->
+        <div class="notice notice-info">
+            <i data-lucide="info"></i>
+            <div>选择 FTP 服务器后，勾选要发送的文件，点击「发送到 Switch」即可。上传路径为空时发送到 FTP 根目录。</div>
+        </div>
+
+        <!-- 标签页 -->
+        <div class="tabs">
+            <button class="tab active" data-tab="transfer" onclick="switchTab('transfer')"><i data-lucide="package"></i> 文件列表</button>
+            <button class="tab" data-tab="log" onclick="switchTab('log')"><i data-lucide="clipboard-list"></i> 日志</button>
+        </div>
+
+        <!-- 文件列表标签页 -->
+        <div class="tab-content active" id="tab-transfer">
+            <!-- 工具栏 -->
+            <div class="toolbar">
+                <div class="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll()" title="全选/取消"></div>
+                <span class="file-count" id="fileCount">已选 0 / 0 个文件</span>
+                <div class="spacer"></div>
+                <button class="btn btn-success" id="btnSend" onclick="startTransfer()" disabled><i data-lucide="upload"></i> 发送到 Switch</button>
+            </div>
+
+            <!-- 文件列表 -->
+            <div class="file-list-header">
+                <div></div>
+                <div>文件名</div>
+                <div>大小</div>
+                <div>类型</div>
+                <div>修改时间</div>
+                <div></div>
+            </div>
+            <div class="file-list-body" id="fileListBody">
+                <div class="empty-state">
+                    <i data-lucide="folder-open"></i>
+                    <p>正在扫描文件...</p>
+                </div>
+            </div>
+
+            <!-- 进度 -->
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+                <div class="progress-stats">
+                    <span id="progressLabel">0.0% (0 B / 0 B)</span>
+                    <span id="progressSpeed">0 B/s</span>
+                    <span id="progressEta">剩余: --</span>
+                </div>
+                <div class="progress-file" id="progressFile"></div>
+            </div>
+        </div>
+
+        <!-- 日志标签页 -->
+        <div class="tab-content" id="tab-log">
+            <div style="margin-bottom:8px;">
+                <button class="btn btn-sm" onclick="clearLog()"><i data-lucide="trash-2"></i> 清空日志</button>
+            </div>
+            <div class="log-area" id="logArea"></div>
+        </div>
+    </div>
+
+    <!-- 添加 FTP 服务器模态框 -->
+    <div class="modal-overlay hidden" id="addServerModal">
+        <div class="modal" role="dialog">
+            <h2><i data-lucide="server"></i> 添加 FTP 服务器</h2>
+            <div class="form-row">
+                <label>名称</label>
+                <input type="text" id="srvName" placeholder="例如：我的Switch">
+            </div>
+            <div class="form-row-2col">
+                <div class="form-row">
+                    <label>FTP 地址</label>
+                    <input type="text" id="srvHost" placeholder="192.168.1.100">
+                </div>
+                <div class="form-row">
+                    <label>端口</label>
+                    <input type="number" id="srvPort" value="5000">
+                </div>
+            </div>
+            <div class="form-row-2col">
+                <div class="form-row">
+                    <label>用户名</label>
+                    <input type="text" id="srvUser" value="ftp" placeholder="ftp">
+                </div>
+                <div class="form-row">
+                    <label>密码</label>
+                    <input type="password" id="srvPass" placeholder="留空则匿名">
+                </div>
+            </div>
+            <div class="form-row">
+                <label>上传路径（为空则上传到 FTP 根目录）</label>
+                <input type="text" id="srvPath" placeholder="/switch/nsp">
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeModal('addServerModal')">取消</button>
+                <button class="btn btn-primary" onclick="addServer()"><i data-lucide="check"></i> 添加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 服务器列表管理模态框 -->
+    <div class="modal-overlay hidden" id="serverListModal">
+        <div class="modal" role="dialog">
+            <h2><i data-lucide="settings"></i> 管理 FTP 服务器</h2>
+            <div id="serverListBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="closeModal('serverListModal')">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 全局状态
+        // ============================================================
+        let allFiles = [];
+        let selectedFiles = new Set(); // 存储文件路径
+        let servers = [];
+        let currentTaskId = null;
+        let pollTimer = null;
+        let currentServerStatus = {}; // server_name -> {status, message}
+
+        // ============================================================
+        // 初始化
+        // ============================================================
+        async function init() {
+            lucide.createIcons();
+            await loadConfig();
+            await loadFiles();
+        }
+
+        // ============================================================
+        // 配置 & 服务器管理
+        // ============================================================
+        async function loadConfig() {
+            try {
+                const res = await fetch('/api/servers');
+                const data = await res.json();
+                servers = data.servers || [];
+                renderServerSelect();
+            } catch (e) {
+                log('加载配置失败: ' + e.message, 'error');
+            }
+        }
+
+        function renderServerSelect() {
+            const sel = document.getElementById('ftpSelect');
+            sel.innerHTML = '';
+            if (servers.length === 0) {
+                sel.innerHTML = '<option value="">— 请添加服务器 —</option>';
+                updateFtpStatus('unknown', '未配置');
+                return;
+            }
+            servers.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.name;
+                opt.textContent = `${s.name} (${s.host}:${s.port})`;
+                sel.appendChild(opt);
+            });
+            // 恢复之前选中的
+            const prev = sel.dataset.prev;
+            if (prev && servers.some(s => s.name === prev)) {
+                sel.value = prev;
+            }
+            onServerChange();
+        }
+
+        function onServerChange() {
+            const sel = document.getElementById('ftpSelect');
+            sel.dataset.prev = sel.value;
+            const name = sel.value;
+            if (!name) {
+                updateFtpStatus('unknown', '未选择');
+                return;
+            }
+            // 使用缓存的状态
+            const cached = currentServerStatus[name];
+            if (cached) {
+                updateFtpStatus(cached.status, cached.message);
+            } else {
+                updateFtpStatus('unknown', '未检测');
+            }
+            updateSendButton();
+        }
+
+        async function checkFtpStatus() {
+            const sel = document.getElementById('ftpSelect');
+            const name = sel.value;
+            if (!name) return;
+            updateFtpStatus('checking', '检测中...');
+            document.getElementById('btnCheckFtp').disabled = true;
+            try {
+                const res = await fetch(`/api/servers/${encodeURIComponent(name)}/status`);
+                const data = await res.json();
+                currentServerStatus[name] = data;
+                updateFtpStatus(data.status, data.message);
+                log(`FTP [${name}]: ${data.message}`, data.status === 'connected' ? 'success' : 'error');
+            } catch (e) {
+                updateFtpStatus('error', '检测失败: ' + e.message);
+            } finally {
+                document.getElementById('btnCheckFtp').disabled = false;
+            }
+        }
+
+        function updateFtpStatus(status, message) {
+            const dot = document.getElementById('ftpStatusDot');
+            const text = document.getElementById('ftpStatusText');
+            dot.className = 'status-dot';
+            text.className = 'status-text';
+            if (status === 'connected') {
+                dot.classList.add('connected');
+                text.classList.add('connected');
+            } else if (status === 'error') {
+                dot.classList.add('error');
+                text.classList.add('error');
+            } else if (status === 'checking') {
+                dot.classList.add('checking');
+            }
+            text.textContent = message || '';
+        }
+
+        // ============================================================
+        // 文件扫描 & 列表
+        // ============================================================
+        async function loadFiles() {
+            try {
+                const res = await fetch('/api/files');
+                const data = await res.json();
+                allFiles = data.files || [];
+                renderFileList();
+            } catch (e) {
+                log('扫描文件失败: ' + e.message, 'error');
+            }
+        }
+
+        async function rescanFiles() {
+            const body = document.getElementById('fileListBody');
+            body.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>正在重新扫描...</p></div>';
+            await loadFiles();
+            log(`扫描完成，共 ${allFiles.length} 个文件`, 'info');
+        }
+
+        function renderFileList() {
+            const body = document.getElementById('fileListBody');
+            if (allFiles.length === 0) {
+                body.innerHTML = '<div class="empty-state"><i data-lucide="folder-x"></i><p>未找到 Switch 安装包</p><p style="font-size:0.75rem;margin-top:4px;">请在 config.yml 中配置 scan_dirs 目录</p></div>';
+                lucide.createIcons();
+                updateFileCount();
+                return;
+            }
+            body.innerHTML = '';
+            allFiles.forEach((f, idx) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.dataset.path = f.path;
+                const ext = (f.name.split('.').pop() || '').toLowerCase();
+                const isChecked = selectedFiles.has(f.path);
+                item.innerHTML = `
+                    <div class="checkbox ${isChecked ? 'checked' : ''}" onclick="toggleFile('${escapeAttr(f.path)}')"></div>
+                    <div class="fname" title="${escapeAttr(f.path)}">${escapeHtml(f.name)}</div>
+                    <div class="fsize">${formatSize(f.size)}</div>
+                    <div><span class="ftype ${ext}">${ext}</span></div>
+                    <div class="fdate">${f.mtime_str}</div>
+                    <div></div>
+                `;
+                body.appendChild(item);
+            });
+            updateFileCount();
+            updateSelectAllCheckbox();
+        }
+
+        function toggleFile(path) {
+            if (selectedFiles.has(path)) {
+                selectedFiles.delete(path);
+            } else {
+                selectedFiles.add(path);
+            }
+            renderFileList();
+            updateSendButton();
+        }
+
+        function toggleSelectAll() {
+            if (selectedFiles.size === allFiles.length) {
+                selectedFiles.clear();
+            } else {
+                allFiles.forEach(f => selectedFiles.add(f.path));
+            }
+            renderFileList();
+            updateSendButton();
+        }
+
+        function updateSelectAllCheckbox() {
+            const cb = document.getElementById('selectAllCheckbox');
+            cb.className = 'checkbox';
+            if (selectedFiles.size === allFiles.length && allFiles.length > 0) {
+                cb.classList.add('checked');
+            } else if (selectedFiles.size > 0) {
+                cb.classList.add('indeterminate');
+            }
+        }
+
+        function updateFileCount() {
+            document.getElementById('fileCount').textContent =
+                `已选 ${selectedFiles.size} / ${allFiles.length} 个文件`;
+            updateSelectAllCheckbox();
+        }
+
+        function updateSendButton() {
+            const sel = document.getElementById('ftpSelect');
+            document.getElementById('btnSend').disabled = selectedFiles.size === 0 || !sel.value;
+        }
+
+        // ============================================================
+        // 传输
+        // ============================================================
+        async function startTransfer() {
+            const server = document.getElementById('ftpSelect').value;
+            if (!server) { alert('请先选择 FTP 服务器'); return; }
+            if (selectedFiles.size === 0) { alert('请勾选要发送的文件'); return; }
+
+            const files = allFiles.filter(f => selectedFiles.has(f.path)).map(f => ({
+                name: f.name, path: f.path, size: f.size
+            }));
+
+            document.getElementById('btnSend').disabled = true;
+            document.getElementById('progressContainer').classList.add('active');
+            document.getElementById('progressFill').className = 'progress-bar-fill';
+            document.getElementById('progressFill').style.width = '0%';
+
+            log(`开始传输 ${files.length} 个文件到 ${server}...`, 'info');
+
+            try {
+                const res = await fetch('/api/transfer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ server, files })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    currentTaskId = data.task_id;
+                    log(`任务已创建，共 ${data.total_files} 个文件，总计 ${formatSize(data.total_bytes)}`, 'info');
+                    startPolling();
+                } else {
+                    log('创建传输任务失败: ' + (data.error || '未知错误'), 'error');
+                    document.getElementById('progressContainer').classList.remove('active');
+                    document.getElementById('btnSend').disabled = false;
+                }
+            } catch (e) {
+                log('传输请求失败: ' + e.message, 'error');
+                document.getElementById('progressContainer').classList.remove('active');
+                document.getElementById('btnSend').disabled = false;
+            }
+        }
+
+        function startPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(pollTransferStatus, 500);
+        }
+
+        function stopPolling() {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+
+        async function pollTransferStatus() {
+            if (!currentTaskId) return;
+            try {
+                const res = await fetch(`/api/transfer/${currentTaskId}/status`);
+                const data = await res.json();
+
+                const fill = document.getElementById('progressFill');
+                fill.style.width = data.progress + '%';
+                document.getElementById('progressLabel').textContent =
+                    `${data.progress}% (${formatSize(data.uploaded_bytes)} / ${formatSize(data.total_bytes)})`;
+                document.getElementById('progressSpeed').textContent = data.speed_str;
+                document.getElementById('progressEta').textContent = '剩余: ' + data.eta;
+                document.getElementById('progressFile').textContent =
+                    data.current_file ? `[${data.current_file_index}/${data.total_files}] ${data.current_file} — ${data.current_file_progress}%` : '';
+
+                // 更新日志
+                if (data.log && data.log.length > 0) {
+                    const lastLogged = document.getElementById('logArea').dataset.lastLog || '';
+                    const newLogs = [];
+                    for (const entry of data.log) {
+                        const key = `${entry.time}|${entry.msg}`;
+                        if (key === lastLogged) break;
+                        newLogs.unshift(entry);
+                    }
+                    if (newLogs.length > 0) {
+                        newLogs.forEach(e => log(e.msg, e.level === 'success' ? 'success' : e.level === 'warning' ? 'warning' : e.level === 'error' ? 'error' : 'info', e.time));
+                        document.getElementById('logArea').dataset.lastLog = `${data.log[0].time}|${data.log[0].msg}`;
+                    }
+                }
+
+                if (data.status === 'completed' || data.status === 'error' || data.status === 'cancelled') {
+                    stopPolling();
+                    if (data.status === 'completed') {
+                        fill.classList.add('complete');
+                        log('传输完成！', 'success');
+                    } else if (data.status === 'error') {
+                        fill.classList.add('error');
+                        log('传输失败: ' + (data.error || '未知错误'), 'error');
+                    } else {
+                        log('传输已取消', 'warning');
+                    }
+                    document.getElementById('btnSend').disabled = false;
+                    // 清理选中
+                    if (data.status === 'completed') {
+                        selectedFiles.clear();
+                        renderFileList();
+                    }
+                    currentTaskId = null;
+                }
+            } catch (e) {
+                console.error('轮询失败:', e);
+            }
+        }
+
+        async function cancelTransfer() {
+            if (!currentTaskId) return;
+            if (!confirm('确定取消当前传输吗？')) return;
+            try {
+                await fetch(`/api/transfer/${currentTaskId}/cancel`, { method: 'POST' });
+                log('正在取消传输...', 'warning');
+            } catch (e) {
+                log('取消请求失败: ' + e.message, 'error');
+            }
+        }
+
+        // ============================================================
+        // 模态框
+        // ============================================================
+        function openAddServerModal() {
+            document.getElementById('addServerModal').classList.remove('hidden');
+            document.getElementById('srvName').focus();
+        }
+
+        function openServerListModal() {
+            renderServerList();
+            document.getElementById('serverListModal').classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        async function addServer() {
+            const name = document.getElementById('srvName').value.trim();
+            const host = document.getElementById('srvHost').value.trim();
+            const port = document.getElementById('srvPort').value.trim() || '5000';
+            const username = document.getElementById('srvUser').value.trim();
+            const password = document.getElementById('srvPass').value;
+            const upload_path = document.getElementById('srvPath').value.trim();
+
+            if (!name || !host) {
+                alert('名称和地址不能为空');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, host, port: parseInt(port), username, password, upload_path })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log(`已添加服务器: ${name}`, 'success');
+                    await loadConfig();
+                    // 自动选中新添加的
+                    document.getElementById('ftpSelect').value = name;
+                    onServerChange();
+                    closeModal('addServerModal');
+                    // 清空表单
+                    ['srvName', 'srvHost', 'srvPass', 'srvPath'].forEach(id => document.getElementById(id).value = '');
+                } else {
+                    alert(data.error || '添加失败');
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+            }
+        }
+
+        function renderServerList() {
+            const body = document.getElementById('serverListBody');
+            if (servers.length === 0) {
+                body.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:24px;">暂无服务器，请点击「添加」</p>';
+                return;
+            }
+            body.innerHTML = '';
+            servers.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'server-item';
+                const hasPw = s.has_password ? ' ••••' : ' 无密码';
+                item.innerHTML = `
+                    <div class="server-info">
+                        <div class="server-name">${escapeHtml(s.name)}</div>
+                        <div class="server-detail">${escapeHtml(s.host)}:${s.port} · ${escapeHtml(s.username || 'anonymous')}${hasPw} · 路径: ${escapeHtml(s.upload_path || '根目录')}</div>
+                    </div>
+                    <div class="server-actions">
+                        <button class="btn btn-sm btn-danger" onclick="deleteServer('${escapeAttr(s.name)}')"><i data-lucide="trash-2"></i> 删除</button>
+                    </div>
+                `;
+                body.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        async function deleteServer(name) {
+            if (!confirm(`确定删除服务器「${name}」吗？`)) return;
+            try {
+                await fetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                log(`已删除服务器: ${name}`, 'info');
+                delete currentServerStatus[name];
+                await loadConfig();
+                renderServerList();
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        // ============================================================
+        // 日志
+        // ============================================================
+        function log(msg, level = 'info', time = null) {
+            const area = document.getElementById('logArea');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry' + (level !== 'info' ? ` log-${level}` : '');
+            const ts = time || new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            entry.textContent = `[${ts}] ${msg}`;
+            area.appendChild(entry);
+            area.scrollTop = area.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('logArea').innerHTML = '';
+            document.getElementById('logArea').dataset.lastLog = '';
+        }
+
+        // ============================================================
+        // 标签页
+        // ============================================================
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
+        }
+
+        // ============================================================
+        // 工具函数
+        // ============================================================
+        function formatSize(bytes) {
+            if (!bytes) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+            return bytes.toFixed(1) + ' ' + units[i];
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeAttr(text) {
+            return text.replace(/'/g, "\\'").replace(/"/g, '\\"');
+        }
+
+        // 关闭模态框 - 点击遮罩
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) overlay.classList.add('hidden');
+            });
+        });
+
+        // ESC 关闭模态框
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+            }
+        });
+
+        // 启动
+        init();
+    </script>
+</body>
+</html>

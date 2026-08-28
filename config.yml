@@ -1,0 +1,17 @@
+server:
+  host: 0.0.0.0
+  port: 8090
+scan_dirs:
+- /Users/zhuguojun/Downloads/switch
+scan_extensions:
+- .nsp
+- .nsz
+- .xci
+- .xcz
+ftp_servers:
+- name: Switch-1
+  host: 192.168.1.100
+  port: 5000
+  username: ftp
+  password: ''
+  upload_path: /switch/nsp
