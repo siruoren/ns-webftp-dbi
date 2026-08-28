@@ -453,8 +453,10 @@
         <!-- 上传列表标签页 -->
         <div class="tab-content" id="tab-uploads">
             <div class="upload-toolbar">
+                <div class="checkbox" id="selectAllUploadsCheckbox" onclick="toggleSelectAllUploads()" data-i18n-title="select_all" title="全选/取消"></div>
                 <span class="upload-count" id="uploadCount"></span>
                 <div class="spacer"></div>
+                <button class="btn btn-sm btn-success" id="btnRetrySelected" onclick="retrySelectedUploadFiles()" disabled><i data-lucide="rotate-cw"></i> <span data-i18n="btn_retry_selected">重试选中</span></button>
                 <button class="btn btn-sm btn-danger" id="btnCancelSelected" onclick="cancelSelectedUploadFiles()" disabled><i data-lucide="x-circle"></i> <span data-i18n="btn_cancel_selected">取消选中</span></button>
                 <button class="btn btn-sm" onclick="refreshTransfers()"><i data-lucide="refresh-cw"></i> <span data-i18n="btn_refresh_list" style="font-size:0.75rem;">刷新</span></button>
             </div>
@@ -592,6 +594,7 @@
                 btn_cancel_selected: "取消选中",
                 btn_cancel_all: "全部取消",
                 btn_delete_transfer: "删除",
+                btn_retry_selected: "重试选中",
                 upload_status_pending: "等待中",
                 upload_status_uploading: "上传中",
                 upload_status_completed: "已完成",
@@ -600,7 +603,10 @@
                 transfer_files: "{c}/{t} 文件",
                 msg_cancel_all_files: "确定取消此任务的所有待上传文件吗？",
                 msg_cancel_selected_files: "确定取消选中的文件吗？",
+                msg_retry_selected_files: "确定重试选中的失败文件吗？",
                 msg_confirm_delete_transfer: "确定删除此上传记录吗？",
+                log_retrying: "正在重试选中文件...",
+                log_retry_failed: "重试失败: ",
                 log_transfer_started: "传输任务已创建，共 {n} 个文件",
                 select_all: "全选/取消",
                 btn_send: "发送到 Switch",
@@ -711,6 +717,7 @@
                 btn_cancel_selected: "Cancel Selected",
                 btn_cancel_all: "Cancel All",
                 btn_delete_transfer: "Delete",
+                btn_retry_selected: "Retry Selected",
                 upload_status_pending: "Pending",
                 upload_status_uploading: "Uploading",
                 upload_status_completed: "Completed",
@@ -719,7 +726,10 @@
                 transfer_files: "{c}/{t} files",
                 msg_cancel_all_files: "Cancel all pending files in this task?",
                 msg_cancel_selected_files: "Cancel selected files?",
+                msg_retry_selected_files: "Retry selected failed files?",
                 msg_confirm_delete_transfer: "Delete this transfer record?",
+                log_retrying: "Retrying selected files...",
+                log_retry_failed: "Retry failed: ",
                 log_transfer_started: "Transfer task created, {n} files",
                 select_all: "Select all / None",
                 btn_send: "Send to Switch",
@@ -871,6 +881,7 @@
         let searchKeyword = '';
         let selectedUploadFiles = new Set();
         let transferPollTimer = null;
+        let autoDeleteTimers = {};
 
         // ============================================================
         // 初始化
@@ -1273,6 +1284,11 @@
                 if (res.ok) {
                     currentTaskId = data.task_id;
                     log(t('log_transfer_started', { n: data.total_files }), 'success');
+                    if (data.skipped) {
+                        log(currentLang === 'zh'
+                            ? `已自动忽略 ${data.skipped} 个已在上传列表中的文件`
+                            : `Skipped ${data.skipped} file(s) already in upload list`, 'warning');
+                    }
                     // 清空文件选中状态
                     selectedFiles.clear();
                     renderFileList();
@@ -1403,6 +1419,27 @@
                 const transfers = data.transfers || [];
                 renderTransfers(transfers);
                 updateUploadBadge(transfers);
+
+                // 自动删除：已终止且无失败文件的任务（延迟 3 秒）
+                const terminalStatuses = ['completed', 'error', 'cancelled'];
+                transfers.forEach(tr => {
+                    if (!terminalStatuses.includes(tr.status)) return;
+                    const allFiles = tr.files || [];
+                    const hasFailed = allFiles.some(f => f.status === 'failed');
+                    const hasActiveFile = allFiles.some(f => ['pending', 'uploading'].includes(f.status));
+                    if (!hasFailed && !hasActiveFile) {
+                        if (!autoDeleteTimers[tr.id]) {
+                            autoDeleteTimers[tr.id] = setTimeout(async () => {
+                                delete autoDeleteTimers[tr.id];
+                                try {
+                                    await fetch(`/api/transfer/${tr.id}`, { method: 'DELETE' });
+                                    loadTransfers();
+                                } catch (e) { /* ignore */ }
+                            }, 3000);
+                        }
+                    }
+                });
+
                 // 如果没有活跃任务，停止轮询
                 const activeStatuses = ['starting', 'transferring'];
                 const hasActive = transfers.some(t => activeStatuses.includes(t.status));
@@ -1429,11 +1466,22 @@
 
         function renderTransfers(transfers) {
             const list = document.getElementById('transferList');
-            if (transfers.length === 0) {
+
+            // 过滤掉 completed 和 cancelled 的文件（已自动移除）
+            const VISIBLE_STATUSES = ['pending', 'uploading', 'failed'];
+            // 只显示仍有可见文件的任务
+            const visibleTransfers = transfers.map(tr => ({
+                ...tr,
+                _visibleFiles: (tr.files || []).map((f, idx) => ({ f, idx })).filter(x => VISIBLE_STATUSES.includes(x.f.status))
+            })).filter(tr => tr._visibleFiles.length > 0);
+
+            if (visibleTransfers.length === 0) {
                 list.innerHTML = `<div class="empty-state"><i data-lucide="upload-cloud"></i><p>${t('no_transfers')}</p></div>`;
                 lucide.createIcons();
                 document.getElementById('uploadCount').textContent = '';
                 document.getElementById('btnCancelSelected').disabled = true;
+                document.getElementById('btnRetrySelected').disabled = true;
+                document.getElementById('selectAllUploadsCheckbox').classList.remove('checked');
                 return;
             }
 
@@ -1441,7 +1489,7 @@
             document.getElementById('uploadCount').textContent = `${activeCount} ${currentLang === 'zh' ? '个进行中' : 'active'}`;
 
             list.innerHTML = '';
-            transfers.forEach(tr => {
+            visibleTransfers.forEach(tr => {
                 const card = document.createElement('div');
                 card.className = 'transfer-card';
 
@@ -1465,16 +1513,16 @@
                         <span class="status-badge ${statusClass}">${t('upload_status_' + tr.status) || tr.status}</span>
                     </div>
                     <div class="transfer-files">
-                        ${(tr.files || []).map((f, idx) => {
+                        ${tr._visibleFiles.map(({ f, idx }) => {
                             const fstatus = f.status;
                             const fprogress = f.progress || 0;
-                            const canCancel = ['pending', 'uploading'].includes(fstatus);
+                            const selectable = ['pending', 'uploading', 'failed'].includes(fstatus);
                             const isSelected = selectedUploadFiles.has(`${tr.id}:${idx}`);
                             const fillClass = fstatus;
                             const sizeStr = formatSize(f.size);
                             return `
                                 <div class="upload-file-item">
-                                    <div class="checkbox ${isSelected ? 'checked' : ''}" ${canCancel ? `onclick="toggleUploadFileSelect('${tr.id}', ${idx})"` : 'style="visibility:hidden"'}></div>
+                                    <div class="checkbox ${isSelected ? 'checked' : ''}" ${selectable ? `onclick="toggleUploadFileSelect('${tr.id}', ${idx}, event)"` : 'style="visibility:hidden"'}></div>
                                     <div>
                                         <div class="upload-fname">${escapeHtml(f.name)}</div>
                                         ${f.error ? `<div class="upload-file-error">${escapeHtml(f.error)}</div>` : ''}
@@ -1489,28 +1537,60 @@
                             `;
                         }).join('')}
                     </div>
-                    <div class="transfer-actions">
-                        <button class="btn btn-sm btn-danger" onclick="cancelAllUploadFiles('${tr.id}')" ${!['starting', 'transferring'].includes(tr.status) ? 'disabled' : ''}><i data-lucide="x"></i> ${t('btn_cancel_all')}</button>
-                        <button class="btn btn-sm" onclick="deleteTransfer('${tr.id}')"><i data-lucide="trash-2"></i> ${t('btn_delete_transfer')}</button>
-                    </div>
                 `;
                 list.appendChild(card);
             });
             lucide.createIcons();
 
-            // 更新取消选中按钮状态
-            document.getElementById('btnCancelSelected').disabled = selectedUploadFiles.size === 0;
+            // 更新按钮状态
+            updateUploadToolbarButtons();
         }
 
-        function toggleUploadFileSelect(taskId, fileIdx) {
+        function updateUploadToolbarButtons() {
+            const hasSelected = selectedUploadFiles.size > 0;
+            document.getElementById('btnCancelSelected').disabled = !hasSelected;
+            document.getElementById('btnRetrySelected').disabled = !hasSelected;
+        }
+
+        function toggleSelectAllUploads() {
+            const checkbox = document.getElementById('selectAllUploadsCheckbox');
+            if (selectedUploadFiles.size > 0) {
+                // 取消全选
+                selectedUploadFiles.clear();
+                checkbox.classList.remove('checked');
+            } else {
+                // 全选所有可见文件（从当前 DOM 读取）
+                document.querySelectorAll('#transferList .checkbox[onclick]').forEach(cb => {
+                    const onclick = cb.getAttribute('onclick');
+                    const match = onclick.match(/toggleUploadFileSelect\('([^']+)', (\d+), event\)/);
+                    if (match) {
+                        selectedUploadFiles.add(`${match[1]}:${match[2]}`);
+                    }
+                });
+                checkbox.classList.add('checked');
+                // 更新所有 checkbox 显示
+                document.querySelectorAll('#transferList .checkbox[onclick]').forEach(cb => cb.classList.add('checked'));
+            }
+            updateUploadToolbarButtons();
+        }
+
+        function toggleUploadFileSelect(taskId, fileIdx, event) {
+            if (event) event.stopPropagation();
             const key = `${taskId}:${fileIdx}`;
             if (selectedUploadFiles.has(key)) {
                 selectedUploadFiles.delete(key);
             } else {
                 selectedUploadFiles.add(key);
             }
-            // 只更新checkbox，不重新渲染整个列表
-            loadTransfers();
+            // 只更新当前 checkbox，不重新渲染整个列表
+            if (event) {
+                event.currentTarget.classList.toggle('checked', selectedUploadFiles.has(key));
+            }
+            // 更新全选 checkbox 状态
+            const allCbs = document.querySelectorAll('#transferList .checkbox[onclick]');
+            const allChecked = allCbs.length > 0 && Array.from(allCbs).every(cb => cb.classList.contains('checked'));
+            document.getElementById('selectAllUploadsCheckbox').classList.toggle('checked', allChecked);
+            updateUploadToolbarButtons();
         }
 
         async function cancelSelectedUploadFiles() {
@@ -1541,24 +1621,32 @@
             }
         }
 
-        async function cancelAllUploadFiles(taskId) {
-            if (!confirm(t('msg_cancel_all_files'))) return;
-            try {
-                await fetch(`/api/transfer/${taskId}/cancel`, { method: 'POST' });
-                log(t('log_cancelling'), 'warning');
-                await loadTransfers();
-            } catch (e) {
-                log(t('log_cancel_failed') + e.message, 'error');
-            }
-        }
+        async function retrySelectedUploadFiles() {
+            if (selectedUploadFiles.size === 0) return;
+            if (!confirm(t('msg_retry_selected_files'))) return;
 
-        async function deleteTransfer(taskId) {
-            if (!confirm(t('msg_confirm_delete_transfer'))) return;
+            // 按 taskId 分组
+            const grouped = {};
+            selectedUploadFiles.forEach(key => {
+                const [taskId, idx] = key.split(':');
+                if (!grouped[taskId]) grouped[taskId] = [];
+                grouped[taskId].push(parseInt(idx));
+            });
+
             try {
-                await fetch(`/api/transfer/${taskId}`, { method: 'DELETE' });
+                for (const [taskId, indices] of Object.entries(grouped)) {
+                    await fetch(`/api/transfer/${taskId}/retry-files`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_indices: indices })
+                    });
+                }
+                selectedUploadFiles.clear();
+                log(t('log_retrying'), 'success');
                 await loadTransfers();
+                startTransferPolling();
             } catch (e) {
-                log(t('log_cancel_failed') + e.message, 'error');
+                log(t('log_retry_failed') + e.message, 'error');
             }
         }
 
