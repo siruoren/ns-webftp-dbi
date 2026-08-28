@@ -298,7 +298,7 @@ class FTPManager:
 
             # 超时保护常量
             CONNECT_TIMEOUT = 15       # FTP 连接建立超时
-            STALL_TIMEOUT = 120        # 进度停滞超时：120 秒无数据传输则判定超时
+            STALL_TIMEOUT = 300        # 进度停滞超时：300 秒无数据传输则判定超时
             BLOCK_SIZE = 1048576       # 1MB 块，提升大文件吞吐量
             KEEPALIVE_INTERVAL = 1.0   # 进度采样间隔（秒）
             MAX_RETRIES = 3            # 单文件最大重试次数
@@ -478,7 +478,7 @@ class FTPManager:
                                 # 已达最大重试次数或已取消
                                 if task["files"][idx]["status"] != "cancelled":
                                     task["files"][idx]["status"] = "failed"
-                                    task["files"][idx]["error"] = str(e) if not is_stall else f"传输停滞超时（{STALL_TIMEOUT}秒无进展）"
+                                    task["files"][idx]["error"] = str(e) if not is_stall else f"传输停滞超时（300秒无进展）"
                                     log(f"上传失败: {fname} - {task['files'][idx]['error']}", "error")
                         finally:
                             wd_active.clear()
