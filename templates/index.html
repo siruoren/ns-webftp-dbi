@@ -981,7 +981,7 @@
             onServerChange();
         }
 
-        function onServerChange() {
+        async function onServerChange() {
             const sel = document.getElementById('ftpSelect');
             sel.dataset.prev = sel.value;
             const name = sel.value;
@@ -1000,15 +1000,19 @@
             selectedUploadFiles.clear();
             const selectAllCb = document.getElementById('selectAllUploadsCheckbox');
             if (selectAllCb) selectAllCb.classList.remove('checked');
-            // 刷新上传列表（按实例隔离显示）
-            loadTransfers();
-            // 检查是否有活跃任务需要继续轮询
-            fetch('/api/transfers').then(r => r.json()).then(data => {
-                const hasActive = (data.transfers || []).some(t =>
-                    ['starting', 'transferring'].includes(t.status)
-                );
-                if (hasActive) startTransferPolling();
-            });
+            // 刷新上传列表（按当前实例隔离显示）
+            await loadTransfers();
+            // 如果有活跃任务（任意实例），启动轮询以实时更新进度
+            const res = await fetch('/api/transfers');
+            const data = await res.json();
+            const hasActive = (data.transfers || []).some(t =>
+                ['starting', 'transferring'].includes(t.status)
+            );
+            if (hasActive) {
+                startTransferPolling();
+            } else {
+                stopTransferPolling();
+            }
         }
 
         async function checkFtpStatus() {
