@@ -664,6 +664,14 @@
                 log_transfer_failed: "传输请求失败: ",
                 log_unknown_error: "未知错误",
                 log_del_failed: "删除失败: ",
+                log_toggle_all: "切换显示全部文件: ",
+                log_switch_lang: "切换语言为: ",
+                log_switch_server: "切换 FTP 服务器: ",
+                log_upload_start: "开始上传: ",
+                log_upload_done: "上传完成: ",
+                log_upload_fail: "上传失败: ",
+                log_upload_cancel: "已取消: ",
+                log_task_complete: "传输任务完成",
                 status_unknown: "未选择",
                 status_unconfigured: "未配置",
                 status_checking: "检测中...",
@@ -781,6 +789,14 @@
                 log_transfer_failed: "Transfer request failed: ",
                 log_unknown_error: "Unknown error",
                 log_del_failed: "Delete failed: ",
+                log_toggle_all: "Toggle show all files: ",
+                log_switch_lang: "Switch language to: ",
+                log_switch_server: "Switch FTP server: ",
+                log_upload_start: "Upload started: ",
+                log_upload_done: "Upload completed: ",
+                log_upload_fail: "Upload failed: ",
+                log_upload_cancel: "Cancelled: ",
+                log_task_complete: "Transfer task completed",
                 status_unknown: "Not selected",
                 status_unconfigured: "Not configured",
                 status_checking: "Checking...",
@@ -833,6 +849,7 @@
         function toggleLang() {
             currentLang = currentLang === 'zh' ? 'en' : 'zh';
             localStorage.setItem('lang', currentLang);
+            log(t('log_switch_lang') + (currentLang === 'zh' ? '中文' : 'English'), 'info');
             saveUiSettings();
             applyI18n();
             safeCreateIcons();
@@ -968,6 +985,7 @@
                 updateFtpStatus('unknown', t('status_unknown'));
                 return;
             }
+            log(t('log_switch_server') + name, 'info');
             const cached = currentServerStatus[name];
             if (cached) {
                 updateFtpStatus(cached.status, cached.message);
@@ -1066,6 +1084,7 @@
             showAllFiles = !showAllFiles;
             const cb = document.getElementById('showAllCheckbox');
             cb.className = 'checkbox' + (showAllFiles ? ' checked' : '');
+            log(t('log_toggle_all') + (showAllFiles ? 'ON' : 'OFF'), 'info');
             // 切换后清空选中状态并重新加载
             selectedFiles.clear();
             currentPage = 1;
@@ -1376,6 +1395,13 @@
                 const data = await res.json();
                 const all = data.transfers || [];
                 const filtered = filterTransfersByServer(all);
+                // 初始化文件状态跟踪（首次加载不触发日志）
+                all.forEach(tr => {
+                    (tr.files || []).forEach((f, i) => {
+                        _prevFileStatuses[`${tr.id}:${i}`] = f.status;
+                    });
+                    _prevTaskStatuses[tr.id] = tr.status;
+                });
                 renderTransfers(filtered);
                 updateUploadBadge(filtered);
                 return all;
@@ -1401,6 +1427,10 @@
             }
         }
 
+        // 上传文件状态跟踪：{taskId:fileIdx: prevStatus}
+        let _prevFileStatuses = {};
+        let _prevTaskStatuses = {};
+
         async function pollTransfers() {
             if (_pollingInProgress) return;
             _pollingInProgress = true;
@@ -1409,6 +1439,38 @@
                 const data = await res.json();
                 const all = data.transfers || [];
                 const transfers = filterTransfersByServer(all);
+
+                // 检测文件状态变化并记录日志
+                transfers.forEach(tr => {
+                    (tr.files || []).forEach((f, i) => {
+                        const key = `${tr.id}:${i}`;
+                        const prev = _prevFileStatuses[key];
+                        const curr = f.status;
+                        if (prev && prev !== curr) {
+                            const fname = f.name || '';
+                            if (curr === 'uploading') {
+                                log(t('log_upload_start') + fname, 'info');
+                            } else if (curr === 'completed') {
+                                log(t('log_upload_done') + fname, 'success');
+                            } else if (curr === 'failed') {
+                                log(t('log_upload_fail') + fname + (f.error ? ' - ' + f.error : ''), 'error');
+                            } else if (curr === 'cancelled') {
+                                log(t('log_upload_cancel') + fname, 'warning');
+                            }
+                        }
+                        _prevFileStatuses[key] = curr;
+                    });
+                    // 检测任务状态变化
+                    const taskKey = tr.id;
+                    const prevTask = _prevTaskStatuses[taskKey];
+                    if (prevTask && prevTask !== tr.status) {
+                        if (tr.status === 'completed') {
+                            log(t('log_task_complete') + ` [${tr.server}]`, 'success');
+                        }
+                    }
+                    _prevTaskStatuses[taskKey] = tr.status;
+                });
+
                 renderTransfers(transfers);
                 updateUploadBadge(transfers);
 
