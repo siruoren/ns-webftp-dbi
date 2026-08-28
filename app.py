@@ -5,16 +5,14 @@ Switch DBI FTP 传输工具 - 后端服务
 """
 
 import os
-import io
 import time
 import threading
 import uuid
-from pathlib import Path
 from datetime import datetime
 from collections import deque
 
 import yaml
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -762,7 +760,7 @@ def start_transfer():
         "current_file_index": 0,
         "current_file_bytes": 0,
         "current_file_size": 0,
-        "log": [],
+        "log": deque(maxlen=100),
         "server": server_name,
         "server_host": f"{server_info['host']}:{server_info['port']}",
         "cancelled": False,
@@ -798,59 +796,6 @@ def start_transfer():
     if skipped:
         result["skipped"] = len(skipped)
     return jsonify(result)
-
-
-@app.route("/api/transfer/<task_id>/status", methods=["GET"])
-def transfer_status(task_id):
-    with _transfer_lock:
-        task = _transfer_tasks.get(task_id)
-    if not task:
-        return jsonify({"error": "任务不存在"}), 404
-
-    # 计算实时速度
-    speed = 0
-    if task.get("start_time") and task["status"] == "transferring":
-        elapsed = time.time() - task["start_time"]
-        if elapsed > 0 and task["uploaded_bytes"] > 0:
-            speed = task["uploaded_bytes"] / elapsed
-
-    # 计算进度百分比
-    progress = 0
-    if task["total_bytes"] > 0:
-        progress = (task["uploaded_bytes"] / task["total_bytes"]) * 100
-
-    # 计算ETA
-    eta = "计算中..."
-    if speed > 0 and task["status"] == "transferring":
-        remaining = task["total_bytes"] - task["uploaded_bytes"]
-        eta_seconds = remaining / speed
-        if eta_seconds < 60:
-            eta = f"{int(eta_seconds)}秒"
-        else:
-            eta = f"{int(eta_seconds / 60)}分{int(eta_seconds % 60)}秒"
-
-    return jsonify({
-        "id": task_id,
-        "status": task["status"],
-        "total_files": task["total_files"],
-        "total_bytes": task["total_bytes"],
-        "uploaded_bytes": task["uploaded_bytes"],
-        "progress": round(progress, 1),
-        "speed": round(speed, 0),
-        "speed_str": _format_size(speed) + "/s" if speed > 0 else "0 B/s",
-        "eta": eta,
-        "current_file": task["current_file"],
-        "current_file_index": task["current_file_index"],
-        "current_file_bytes": task["current_file_bytes"],
-        "current_file_size": task["current_file_size"],
-        "current_file_progress": round(
-            (task["current_file_bytes"] / task["current_file_size"] * 100), 1
-        ) if task["current_file_size"] > 0 else 0,
-        "log": list(task["log"])[-50:],
-        "avg_speed": task.get("avg_speed", 0),
-        "error": task.get("error", ""),
-        "files": task.get("files", []),
-    })
 
 
 @app.route("/api/transfer/<task_id>/cancel", methods=["POST"])
@@ -959,11 +904,15 @@ def retry_files(task_id):
         return jsonify({"error": "服务器配置不存在"}), 400
 
     # 重置任务状态并启动新线程
-    task["status"] = "transferring"
+    task["status"] = "starting"
     task["cancelled"] = False
     task["start_time"] = None
     task["end_time"] = None
     task["error"] = None
+    task["current_file"] = ""
+    task["current_file_index"] = 0
+    task["current_file_bytes"] = 0
+    task["current_file_size"] = 0
 
     thread = threading.Thread(
         target=FTPManager.upload_files,

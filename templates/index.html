@@ -208,17 +208,6 @@
         .checkbox.indeterminate { background: var(--accent); border-color: var(--accent); }
         .checkbox.indeterminate::after { content: '−'; color: #000; font-size: 14px; font-weight: bold; }
 
-        /* 进度条 */
-        .progress-container { margin-top: 16px; display: none; }
-        .progress-container.active { display: block; }
-        .progress-bar-track { width: 100%; height: 8px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
-        .progress-bar-fill { height: 100%; background: repeating-linear-gradient(45deg, var(--accent) 0, var(--accent) 10px, #1a6bc4 10px, #1a6bc4 20px); background-size: 28px 100%; animation: slide 1s linear infinite; transition: width 0.3s; width: 0%; }
-        .progress-bar-fill.complete { background: var(--success); animation: none; }
-        .progress-bar-fill.error { background: var(--error); animation: none; }
-        @keyframes slide { 0% { background-position: 0 0; } 100% { background-position: 28px 0; } }
-        .progress-stats { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); margin-top: 6px; flex-wrap: wrap; gap: 4px; }
-        .progress-file { font-size: 0.8rem; color: var(--text); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
         /* 日志区域 */
         .log-area { margin-top: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; font-family: var(--font-mono); font-size: 0.75rem; max-height: 250px; overflow-y: auto; white-space: pre-wrap; }
         .log-entry { padding: 1px 0; }
@@ -293,8 +282,8 @@
             .search-box { flex: 1; }
             .search-box input { width: 100%; }
             .search-box input:focus { width: 100%; }
-            #btnSend, #btnCancel { flex: 1; justify-content: center; }
-            #btnSend span, #btnCancel span { font-size: 0.8rem; }
+            #btnSend { flex: 1; justify-content: center; }
+            #btnSend span { font-size: 0.8rem; }
 
             /* 分页 */
             .pagination-bar { flex-wrap: wrap; gap: 6px; }
@@ -319,10 +308,6 @@
             .modal { max-width: 100%; width: 100%; min-height: 100vh; border-radius: 0; padding: 16px; max-height: 100vh; }
             .modal .form-row-2col { flex-direction: column; gap: 0; }
 
-            /* 进度区域 */
-            .progress-stats { font-size: 0.7rem; gap: 8px; }
-            .progress-file { font-size: 0.75rem; }
-
             /* 日志 */
             .log-area { font-size: 0.7rem; max-height: 200px; padding: 10px; }
 
@@ -345,13 +330,10 @@
             .ftp-bar .btn span:not(#langLabel) { display: none; }
             .toolbar .btn span { display: none; }
             .ftp-bar .btn { width: auto; flex: 1; justify-content: center; }
-            .toolbar #btnSend span, .toolbar #btnCancel span { display: inline; }
+            .toolbar #btnSend span { display: inline; }
 
             /* 更紧凑的文件项 */
             .file-item { padding: 8px 10px; }
-
-            /* 进度条行内显示 */
-            .progress-stats { flex-direction: column; gap: 2px; }
         }
     </style>
 </head>
@@ -410,7 +392,6 @@
                 </div>
                 <div class="spacer"></div>
                 <button class="btn btn-sm" onclick="rescanFiles()" data-i18n-title="btn_refresh_list" title="刷新文件列表"><i data-lucide="refresh-cw"></i> <span data-i18n="btn_refresh_list" style="font-size:0.75rem;">刷新</span></button>
-                <button class="btn btn-danger btn-sm" id="btnCancel" onclick="cancelTransfer()" style="display:none;"><i data-lucide="x"></i> <span data-i18n="btn_cancel">取消</span></button>
                 <button class="btn btn-success" id="btnSend" onclick="startTransfer()" disabled><i data-lucide="upload"></i> <span data-i18n="btn_send">发送到 Switch</span></button>
             </div>
 
@@ -441,17 +422,6 @@
                 </select>
                 <button class="btn btn-sm btn-icon" id="btnPrevPage" onclick="changePage(-1)"><i data-lucide="chevron-left"></i></button>
                 <button class="btn btn-sm btn-icon" id="btnNextPage" onclick="changePage(1)"><i data-lucide="chevron-right"></i></button>
-            </div>
-
-            <!-- 进度 -->
-            <div class="progress-container" id="progressContainer">
-                <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
-                <div class="progress-stats">
-                    <span id="progressLabel">0.0% (0 B / 0 B)</span>
-                    <span id="progressSpeed">0 B/s</span>
-                    <span id="progressEta"></span>
-                </div>
-                <div class="progress-file" id="progressFile"></div>
             </div>
         </div>
 
@@ -615,7 +585,6 @@
                 log_transfer_started: "传输任务已创建，共 {n} 个文件",
                 select_all: "全选/取消",
                 btn_send: "发送到 Switch",
-                btn_cancel: "取消",
                 col_name: "文件名",
                 col_size: "大小",
                 col_type: "类型",
@@ -653,7 +622,6 @@
                 help_4: "用户名通常为 ftp，密码一般留空（匿名登录）",
                 help_5: "上传路径为空时文件发送到 FTP 根目录，可根据需要填写如 /switch/nsp",
                 help_6: "传输超时后会自动断开，请检查网络稳定性后重试",
-                eta_prefix: "剩余: ",
                 eta_calc: "计算中...",
                 msg_select_server: "请先选择 FTP 服务器",
                 msg_select_files: "请勾选要发送的文件",
@@ -661,7 +629,6 @@
                 msg_add_failed: "添加失败",
                 msg_request_failed: "请求失败: ",
                 msg_confirm_delete: "确定删除服务器「{n}」吗？",
-                msg_confirm_cancel: "确定取消当前传输吗？",
                 msg_name_exists: "服务器名称 '{n}' 已存在",
                 log_scan_done: "扫描完成，共 {n} 个文件",
                 log_scan_failed: "扫描失败: ",
@@ -676,9 +643,6 @@
                 log_task_created: "任务已创建，共 {n} 个文件，总计 {sz}",
                 log_task_failed: "创建传输任务失败: ",
                 log_transfer_failed: "传输请求失败: ",
-                log_transfer_done: "传输完成！",
-                log_transfer_error: "传输失败: ",
-                log_transfer_cancelled: "传输已取消",
                 log_unknown_error: "未知错误",
                 log_del_failed: "删除失败: ",
                 status_unknown: "未选择",
@@ -738,7 +702,6 @@
                 log_transfer_started: "Transfer task created, {n} files",
                 select_all: "Select all / None",
                 btn_send: "Send to Switch",
-                btn_cancel: "Cancel",
                 col_name: "Name",
                 col_size: "Size",
                 col_type: "Type",
@@ -776,7 +739,6 @@
                 help_4: "Username is typically \"ftp\"; password is usually left empty (anonymous)",
                 help_5: "Empty upload path sends to FTP root; set e.g. /switch/nsp if needed",
                 help_6: "Transfer auto-disconnects on timeout; check network stability and retry",
-                eta_prefix: "ETA: ",
                 eta_calc: "Calculating...",
                 msg_select_server: "Please select an FTP server first",
                 msg_select_files: "Please select files to send",
@@ -784,7 +746,6 @@
                 msg_add_failed: "Add failed",
                 msg_request_failed: "Request failed: ",
                 msg_confirm_delete: "Delete server \"{n}\"?",
-                msg_confirm_cancel: "Cancel the current transfer?",
                 msg_name_exists: "Server name '{n}' already exists",
                 log_scan_done: "Scan complete, {n} files found",
                 log_scan_failed: "Scan failed: ",
@@ -799,9 +760,6 @@
                 log_task_created: "Task created: {n} files, total {sz}",
                 log_task_failed: "Create transfer task failed: ",
                 log_transfer_failed: "Transfer request failed: ",
-                log_transfer_done: "Transfer complete!",
-                log_transfer_error: "Transfer failed: ",
-                log_transfer_cancelled: "Transfer cancelled",
                 log_unknown_error: "Unknown error",
                 log_del_failed: "Delete failed: ",
                 status_unknown: "Not selected",
@@ -877,8 +835,6 @@
         let allFiles = [];
         let selectedFiles = new Set();
         let servers = [];
-        let currentTaskId = null;
-        let pollTimer = null;
         let currentServerStatus = {};
         let showAllFiles = false;
         let currentPage = 1;
@@ -1327,7 +1283,6 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    currentTaskId = data.task_id;
                     log(t('log_transfer_started', { n: data.total_files }), 'success');
                     if (data.skipped) {
                         log(currentLang === 'zh'
@@ -1350,80 +1305,6 @@
             } catch (e) {
                 log(t('log_transfer_failed') + e.message, 'error');
                 document.getElementById('btnSend').disabled = false;
-            }
-        }
-
-        function startPolling() {
-            if (pollTimer) clearInterval(pollTimer);
-            pollTimer = setInterval(pollTransferStatus, 500);
-        }
-
-        function stopPolling() {
-            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        }
-
-        async function pollTransferStatus() {
-            if (!currentTaskId) return;
-            try {
-                const res = await fetch(`/api/transfer/${currentTaskId}/status`);
-                const data = await res.json();
-
-                const fill = document.getElementById('progressFill');
-                fill.style.width = data.progress + '%';
-                document.getElementById('progressLabel').textContent =
-                    `${data.progress}% (${formatSize(data.uploaded_bytes)} / ${formatSize(data.total_bytes)})`;
-                document.getElementById('progressSpeed').textContent = data.speed_str;
-                document.getElementById('progressEta').textContent = t('eta_prefix') + data.eta;
-                document.getElementById('progressFile').textContent =
-                    data.current_file ? `[${data.current_file_index}/${data.total_files}] ${data.current_file} — ${data.current_file_progress}%` : '';
-
-                // 更新日志
-                if (data.log && data.log.length > 0) {
-                    const lastLogged = document.getElementById('logArea').dataset.lastLog || '';
-                    const newLogs = [];
-                    for (const entry of data.log) {
-                        const key = `${entry.time}|${entry.msg}`;
-                        if (key === lastLogged) break;
-                        newLogs.unshift(entry);
-                    }
-                    if (newLogs.length > 0) {
-                        newLogs.forEach(e => log(e.msg, e.level === 'success' ? 'success' : e.level === 'warning' ? 'warning' : e.level === 'error' ? 'error' : 'info', e.time));
-                        document.getElementById('logArea').dataset.lastLog = `${data.log[0].time}|${data.log[0].msg}`;
-                    }
-                }
-
-                if (data.status === 'completed' || data.status === 'error' || data.status === 'cancelled') {
-                    stopPolling();
-                    if (data.status === 'completed') {
-                        fill.classList.add('complete');
-                        log(t('log_transfer_done'), 'success');
-                    } else if (data.status === 'error') {
-                        fill.classList.add('error');
-                        log(t('log_transfer_error') + (data.error || t('log_unknown_error')), 'error');
-                    } else {
-                        log(t('log_transfer_cancelled'), 'warning');
-                    }
-                    document.getElementById('btnSend').disabled = false;
-                    document.getElementById('btnCancel').style.display = 'none';
-                    if (data.status === 'completed') {
-                        selectedFiles.clear();
-                        renderFileList();
-                    }
-                    currentTaskId = null;
-                }
-            } catch (e) {
-                console.error('Poll failed:', e);
-            }
-        }
-
-        async function cancelTransfer() {
-            if (!currentTaskId) return;
-            if (!confirm(t('msg_confirm_cancel'))) return;
-            try {
-                await fetch(`/api/transfer/${currentTaskId}/cancel`, { method: 'POST' });
-                log(t('log_cancelling'), 'warning');
-            } catch (e) {
-                log(t('log_cancel_failed') + e.message, 'error');
             }
         }
 
