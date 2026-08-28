@@ -749,8 +749,36 @@ def delete_server(name):
     return jsonify({"ok": True})
 
 
-@app.route("/api/servers/<name>/status", methods=["GET"])
-def server_status(name):
+# FTP 连接测试线程状态: server_name -> "idle"/"running"
+_ftp_test_threads = {}
+_ftp_test_threads_lock = threading.Lock()
+
+
+def _run_ftp_test_async(name, server_info):
+    """后台线程执行 FTP 连接测试，结果写入 _ftp_status 缓存"""
+    with _ftp_test_threads_lock:
+        if _ftp_test_threads.get(name) == "running":
+            return  # 已有测试在运行
+        _ftp_test_threads[name] = "running"
+    try:
+        success, message = FTPManager.test_connection(
+            server_info["host"], server_info["port"],
+            server_info.get("username", ""), server_info.get("password", "")
+        )
+        with _ftp_status_lock:
+            _ftp_status[name] = {
+                "status": "connected" if success else "error",
+                "message": message,
+                "timestamp": time.time(),
+            }
+    finally:
+        with _ftp_test_threads_lock:
+            _ftp_test_threads[name] = "idle"
+
+
+@app.route("/api/servers/<name>/test", methods=["POST"])
+def test_server(name):
+    """触发异步 FTP 连接测试，立即返回 checking 状态"""
     cfg = ConfigManager.load()
     server = None
     for s in cfg.get("ftp_servers", []):
@@ -759,21 +787,27 @@ def server_status(name):
             break
     if not server:
         return jsonify({"status": "unknown", "message": "服务器不存在"}), 404
-
-    success, message = FTPManager.test_connection(
-        server["host"], server["port"],
-        server.get("username", ""), server.get("password", "")
-    )
+    # 标记为 checking
     with _ftp_status_lock:
         _ftp_status[name] = {
-            "status": "connected" if success else "error",
-            "message": message,
+            "status": "checking",
+            "message": "检测中...",
             "timestamp": time.time(),
         }
-    return jsonify({
-        "status": "connected" if success else "error",
-        "message": message,
-    })
+    # 启动后台测试线程（与文件上传并行，互不影响）
+    t = threading.Thread(target=_run_ftp_test_async, args=(name, server), daemon=True)
+    t.start()
+    return jsonify({"status": "checking", "message": "检测中..."})
+
+
+@app.route("/api/servers/<name>/status", methods=["GET"])
+def server_status(name):
+    """返回 FTP 连接状态缓存（不触发同步测试）"""
+    with _ftp_status_lock:
+        status = _ftp_status.get(name)
+    if status:
+        return jsonify(status)
+    return jsonify({"status": "unknown", "message": "未检测"})
 
 
 @app.route("/api/transfer", methods=["POST"])

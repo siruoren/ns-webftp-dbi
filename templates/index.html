@@ -1003,14 +1003,29 @@
             updateFtpStatus('checking', t('status_checking'));
             document.getElementById('btnCheckFtp').disabled = true;
             try {
-                const res = await fetch(`/api/servers/${encodeURIComponent(name)}/status`);
-                const data = await res.json();
-                currentServerStatus[name] = data;
-                updateFtpStatus(data.status, data.message);
-                log(`FTP [${name}]: ${data.message}`, data.status === 'connected' ? 'success' : 'error');
+                // 触发异步测试，立即返回
+                await fetch(`/api/servers/${encodeURIComponent(name)}/test`, { method: 'POST' });
+                // 轮询缓存状态直到测试完成
+                const pollStatus = async (retries = 0) => {
+                    if (retries > 30) { // 最多轮询 30 次 = 30 秒
+                        updateFtpStatus('error', t('status_check_failed'));
+                        document.getElementById('btnCheckFtp').disabled = false;
+                        return;
+                    }
+                    const res = await fetch(`/api/servers/${encodeURIComponent(name)}/status`);
+                    const data = await res.json();
+                    if (data.status !== 'checking') {
+                        currentServerStatus[name] = data;
+                        updateFtpStatus(data.status, data.message);
+                        log(`FTP [${name}]: ${data.message}`, data.status === 'connected' ? 'success' : 'error');
+                        document.getElementById('btnCheckFtp').disabled = false;
+                    } else {
+                        setTimeout(() => pollStatus(retries + 1), 1000);
+                    }
+                };
+                setTimeout(pollStatus, 1000);
             } catch (e) {
                 updateFtpStatus('error', t('status_check_failed') + e.message);
-            } finally {
                 document.getElementById('btnCheckFtp').disabled = false;
             }
         }
