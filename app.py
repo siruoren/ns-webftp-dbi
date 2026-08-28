@@ -5,9 +5,11 @@ Switch DBI FTP 传输工具 - 后端服务
 """
 
 import os
+import sys
 import time
 import threading
 import uuid
+import logging
 from datetime import datetime
 from collections import deque
 
@@ -15,6 +17,18 @@ import yaml
 from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+
+# 将 Werkzeug 访问日志和 Flask 日志输出到 stdout（默认为 stderr）
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+# Werkzeug 的 HTTP 访问日志：清除自带 handler，通过 propagate 交给 root logger 输出到 stdout
+_wz_logger = logging.getLogger('werkzeug')
+_wz_logger.handlers = []
+_wz_logger.propagate = True
 
 # 全局配置文件路径
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yml")
