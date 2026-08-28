@@ -519,7 +519,6 @@ def get_config():
 
 @app.route("/api/files")
 def list_files():
-    cleanup_old_tasks()
     show_all = request.args.get("all", "false").lower() == "true"
     mgr = FileScanManager.get()
     files = mgr.get_files(show_all=show_all)
@@ -533,7 +532,6 @@ def list_files():
 
 @app.route("/api/files/scan", methods=["POST"])
 def rescan_files():
-    cleanup_old_tasks()
     mgr = FileScanManager.get()
     # 如果已有扫描任务在运行，返回提示
     if mgr.is_scanning:
@@ -660,6 +658,11 @@ def delete_server(name):
     if len(cfg["ftp_servers"]) == before:
         return jsonify({"error": f"未找到服务器 '{name}'"}), 404
     ConfigManager.save(cfg)
+    # 清理缓存中的服务器状态和锁
+    with _ftp_status_lock:
+        _ftp_status.pop(name, None)
+    with _server_locks_guard:
+        _server_locks.pop(name, None)
     return jsonify({"ok": True})
 
 
@@ -692,7 +695,6 @@ def server_status(name):
 
 @app.route("/api/transfer", methods=["POST"])
 def start_transfer():
-    cleanup_old_tasks()
     data = request.json
     if not data:
         return jsonify({"error": "请求数据为空"}), 400
@@ -729,17 +731,17 @@ def start_transfer():
                 "size": fsize,
                 "mtime": mtime,
             })
-
     if not file_list:
         return jsonify({"error": "所选文件均不存在"}), 400
 
     # 过滤掉已在上传列表中的文件（pending/uploading/failed 状态）
     with _transfer_lock:
-        existing_paths = set()
-        for t in _transfer_tasks.values():
-            for f in t.get("files", []):
-                if f["status"] in ("pending", "uploading", "failed"):
-                    existing_paths.add(f["path"])
+        task_refs = list(_transfer_tasks.values())
+    existing_paths = set()
+    for t in task_refs:
+        for f in t.get("files", []):
+            if f["status"] in ("pending", "uploading", "failed"):
+                existing_paths.add(f["path"])
     skipped = [f for f in file_list if f["path"] in existing_paths]
     file_list = [f for f in file_list if f["path"] not in existing_paths]
 
@@ -823,23 +825,25 @@ def delete_transfer(task_id):
 @app.route("/api/transfers")
 def list_transfers():
     cleanup_old_tasks()
+    # 仅在锁内获取任务引用列表，序列化在锁外完成以减少锁持有时间
     with _transfer_lock:
-        tasks = []
-        for tid, task in _transfer_tasks.items():
-            tasks.append({
-                "id": tid,
-                "status": task["status"],
-                "server": task.get("server", ""),
-                "server_host": task.get("server_host", ""),
-                "total_files": task["total_files"],
-                "total_bytes": task["total_bytes"],
-                "uploaded_bytes": task["uploaded_bytes"],
-                "current_file": task["current_file"],
-                "current_file_index": task["current_file_index"],
-                "start_time": task.get("start_time"),
-                "end_time": task.get("end_time"),
-                "files": task.get("files", []),
-            })
+        task_refs = list(_transfer_tasks.values())
+    tasks = []
+    for task in task_refs:
+        tasks.append({
+            "id": task["id"],
+            "status": task["status"],
+            "server": task.get("server", ""),
+            "server_host": task.get("server_host", ""),
+            "total_files": task["total_files"],
+            "total_bytes": task["total_bytes"],
+            "uploaded_bytes": task["uploaded_bytes"],
+            "current_file": task["current_file"],
+            "current_file_index": task["current_file_index"],
+            "start_time": task.get("start_time"),
+            "end_time": task.get("end_time"),
+            "files": task.get("files", []),
+        })
     # Sort: active first, then by start_time descending
     active_statuses = {"starting", "transferring"}
     tasks.sort(key=lambda t: (
