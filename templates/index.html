@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Switch DBI FTP 传输工具</title>
+    <title>Switch DBI FTP 传输工具 / Switch DBI FTP Transfer Tool</title>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <style>
         :root {
@@ -49,10 +49,10 @@
         h1 { font-size: 1.5rem; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
         .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .header-row h1 { margin-bottom: 0; }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
         .subtitle { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 20px; }
         .lucide { width: 16px; height: 16px; }
         h1 .lucide { width: 22px; height: 22px; }
-        .section-title { font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
 
         /* FTP 服务器选择栏 */
         .ftp-bar {
@@ -91,7 +91,7 @@
 
         /* 标签页 */
         .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
-        .tab { padding: 8px 16px; cursor: pointer; color: var(--text-secondary); border-bottom: 2px solid transparent; background: none; border: none; border-bottom: 2px solid transparent; font-family: var(--font-sans); font-size: 0.875rem; }
+        .tab { padding: 8px 16px; cursor: pointer; color: var(--text-secondary); border-bottom: 2px solid transparent; background: none; border: none; font-family: var(--font-sans); font-size: 0.875rem; }
         .tab:hover { color: var(--text); }
         .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
         .tab-content { display: none; }
@@ -102,29 +102,53 @@
         .toolbar .spacer { flex: 1; }
         .file-count { font-size: 0.8rem; color: var(--text-secondary); }
 
+        /* 搜索框 */
+        .search-box { position: relative; display: flex; align-items: center; }
+        .search-box .search-icon { position: absolute; left: 8px; width: 14px; height: 14px; color: var(--text-secondary); pointer-events: none; }
+        .search-box input {
+            background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); font-size: 0.8rem; padding: 6px 10px 6px 28px; width: 180px;
+            font-family: var(--font-sans); transition: all 0.2s;
+        }
+        .search-box input:focus { outline: none; border-color: var(--accent); width: 220px; }
+
+        /* 分页 */
+        .pagination-bar { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 0 4px; }
+        .pagination-bar .spacer { flex: 1; }
+        .pagination-bar #pageInfo { font-size: 0.75rem; color: var(--text-secondary); }
+        .page-size-select {
+            background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--text); font-size: 0.75rem; padding: 4px 8px; cursor: pointer;
+            appearance: none; -webkit-appearance: none;
+        }
+        .page-size-select:hover { border-color: var(--accent); }
+
         /* 文件列表 */
+        .file-list-wrapper { overflow-x: auto; border-radius: var(--radius); }
         .file-list-header, .file-item {
-            display: grid; grid-template-columns: 32px 1fr 100px 90px 120px 40px;
+            display: grid; grid-template-columns: 36px 1fr 90px 130px;
             align-items: center; gap: 10px; padding: 8px 14px;
+            min-width: 460px;
         }
         .file-list-header {
             background: var(--bg-tertiary); border-radius: var(--radius) var(--radius) 0 0;
             font-size: 0.75rem; color: var(--text-secondary); font-weight: 600;
             text-transform: uppercase; border: 1px solid var(--border); border-bottom: none;
         }
+        .file-item .fname-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .file-item .fname-cell .fname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
         .file-list-body { border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); max-height: 480px; overflow-y: auto; }
         .file-item { border-bottom: 1px solid var(--border); font-size: 0.8125rem; transition: background 0.15s; }
         .file-item:last-child { border-bottom: none; }
         .file-item:hover { background: var(--bg-tertiary); }
-        .file-item.uploading { background: var(--accent-bg, #1a2a3a); }
-        .file-item.done { opacity: 0.5; }
         .file-item .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .file-item .fsize, .file-item .fdate { color: var(--text-secondary); font-family: var(--font-mono); font-size: 0.75rem; }
-        .file-item .ftype { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; text-transform: uppercase; }
+        .file-item .ftype { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
         .ftype.nsp { background: #1a3a5a; color: #58a6ff; }
         .ftype.nsz { background: #2d2a1a; color: #d29922; }
         .ftype.xci { background: #2d1a1a; color: #f85149; }
         .ftype.xcz { background: #1a2e1a; color: #3fb950; }
+        .ftype.other { background: #2a2a2a; color: var(--text-secondary); }
 
         /* 复选框 */
         .checkbox {
@@ -159,14 +183,14 @@
         /* 通知 */
         .notice { padding: 10px 14px; border-radius: var(--radius); font-size: 0.8125rem; margin-bottom: 12px; display: flex; gap: 8px; border: 1px solid; }
         .notice-info { background: #1a2a3a; border-color: var(--accent); color: var(--accent); }
-        .notice-warning { background: var(--warning-bg); border-color: var(--warning); color: var(--warning); }
 
         .hidden { display: none !important; }
 
         /* 模态框 */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
         .modal { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius); max-width: 520px; width: 100%; padding: 24px; box-shadow: 0 8px 40px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
-        .modal h2 { font-size: 1.125rem; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .modal h2 { font-size: 1.125rem; color: var(--accent); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+        .modal-sub { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 16px; }
         .modal label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600; }
         .modal input, .modal select {
             width: 100%; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border);
@@ -177,6 +201,7 @@
         .modal .form-row-2col { display: flex; gap: 12px; }
         .modal .form-row-2col > div { flex: 1; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+        .modal p { font-size: 0.875rem; margin-bottom: 10px; }
 
         /* 空状态 */
         .empty-state { text-align: center; padding: 48px 20px; color: var(--text-secondary); }
@@ -192,65 +217,176 @@
         /* 加载动画 */
         .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ============================================================
+           响应式 - 平板 & 手机
+           ============================================================ */
+        @media (max-width: 768px) {
+            body { padding: 8px; }
+            .container { padding: 16px; border-radius: 6px; }
+
+            /* 标题 */
+            h1 { font-size: 1.15rem; }
+            h1 .lucide { width: 18px; height: 18px; }
+            .subtitle { font-size: 0.8rem; margin-bottom: 14px; }
+            .header-actions { gap: 4px; }
+
+            /* FTP 选择栏 - 垂直堆叠 */
+            .ftp-bar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+            .ftp-select-wrap { min-width: 0; width: 100%; }
+            .ftp-select { min-width: 0; width: 100%; flex: 1; }
+            .ftp-bar .btn { width: 100%; justify-content: center; }
+
+            /* 通知 */
+            .notice { font-size: 0.75rem; padding: 8px 12px; }
+
+            /* 工具栏 */
+            .toolbar { gap: 6px; }
+            .toolbar .file-count { font-size: 0.75rem; }
+            .filter-toggle { font-size: 0.75rem; }
+            .search-box { flex: 1; }
+            .search-box input { width: 100%; }
+            .search-box input:focus { width: 100%; }
+            #btnSend, #btnCancel { flex: 1; justify-content: center; }
+            #btnSend span, #btnCancel span { font-size: 0.8rem; }
+
+            /* 分页 */
+            .pagination-bar { flex-wrap: wrap; gap: 6px; }
+            .pagination-bar .spacer { display: none; }
+            .pagination-bar #pageInfo { width: 100%; text-align: center; }
+
+            /* 文件列表 - 保持桌面布局，横向滚动 */
+            .file-list-body { max-height: 400px; }
+
+            /* checkbox 增大触控区 */
+            .checkbox { width: 22px; height: 22px; }
+
+            /* 模态框 - 接近全屏 */
+            .modal-overlay { padding: 0; }
+            .modal { max-width: 100%; width: 100%; min-height: 100vh; border-radius: 0; padding: 16px; max-height: 100vh; }
+            .modal .form-row-2col { flex-direction: column; gap: 0; }
+
+            /* 进度区域 */
+            .progress-stats { font-size: 0.7rem; gap: 8px; }
+            .progress-file { font-size: 0.75rem; }
+
+            /* 日志 */
+            .log-area { font-size: 0.7rem; max-height: 200px; padding: 10px; }
+
+            /* 服务器列表 */
+            .server-item { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .server-item .server-actions { width: 100%; }
+            .server-item .server-actions .btn { width: 100%; justify-content: center; }
+
+            /* 标签页 */
+            .tab { padding: 8px 12px; font-size: 0.8rem; }
+        }
+
+        @media (max-width: 480px) {
+            .container { padding: 12px; }
+            h1 { font-size: 1.05rem; }
+            .header-row { flex-wrap: wrap; }
+            .header-actions { flex-wrap: nowrap; }
+
+            /* 隐藏按钮文字，只保留图标 */
+            .ftp-bar .btn span:not(#langLabel) { display: none; }
+            .toolbar .btn span { display: none; }
+            .ftp-bar .btn { width: auto; flex: 1; justify-content: center; }
+            .toolbar #btnSend span, .toolbar #btnCancel span { display: inline; }
+
+            /* 更紧凑的文件项 */
+            .file-item { padding: 8px 10px; }
+
+            /* 进度条行内显示 */
+            .progress-stats { flex-direction: column; gap: 2px; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- 头部 -->
         <div class="header-row">
-            <h1><i data-lucide="send"></i> Switch DBI FTP 传输工具</h1>
-            <button class="btn btn-icon" onclick="rescanFiles()" title="刷新文件列表"><i data-lucide="refresh-cw"></i></button>
+            <h1><i data-lucide="send"></i> <span data-i18n="app_title">Switch DBI FTP 传输工具</span></h1>
+            <div class="header-actions">
+                <button class="btn btn-icon" onclick="rescanFiles()" data-i18n-title="btn_rescan" title="刷新文件列表"><i data-lucide="refresh-cw"></i></button>
+                <button class="btn btn-icon" onclick="openHelp()" data-i18n-title="btn_help" title="帮助"><i data-lucide="help-circle"></i></button>
+                <button class="btn btn-sm" onclick="toggleLang()" data-i18n-title="btn_lang" title="切换语言"><i data-lucide="languages"></i> <span id="langLabel">EN</span></button>
+            </div>
         </div>
-        <p class="subtitle">自动扫描目录 · 多文件勾选 · FTP 传输到 Switch DBI</p>
+        <p class="subtitle" data-i18n="subtitle">自动扫描目录 · 多文件勾选 · FTP 传输到 Switch DBI</p>
 
         <!-- FTP 服务器选择栏 -->
         <div class="ftp-bar">
             <div class="ftp-select-wrap">
                 <select class="ftp-select" id="ftpSelect" onchange="onServerChange()"></select>
                 <span class="status-dot" id="ftpStatusDot"></span>
-                <span class="status-text" id="ftpStatusText">未检测</span>
+                <span class="status-text" id="ftpStatusText" data-i18n="status_not_checked">未检测</span>
             </div>
-            <button class="btn btn-sm" onclick="checkFtpStatus()" id="btnCheckFtp"><i data-lucide="wifi"></i> 测试连接</button>
-            <button class="btn btn-sm" onclick="openAddServerModal()"><i data-lucide="plus"></i> 添加</button>
-            <button class="btn btn-sm" onclick="openServerListModal()" title="管理服务器"><i data-lucide="settings"></i> 管理</button>
+            <button class="btn btn-sm" onclick="checkFtpStatus()" id="btnCheckFtp"><i data-lucide="wifi"></i> <span data-i18n="btn_test_conn">测试连接</span></button>
+            <button class="btn btn-sm" onclick="openAddServerModal()"><i data-lucide="plus"></i> <span data-i18n="btn_add">添加</span></button>
+            <button class="btn btn-sm" onclick="openServerListModal()" data-i18n-title="btn_manage" title="管理服务器"><i data-lucide="settings"></i> <span data-i18n="btn_manage">管理</span></button>
+            <button class="btn btn-sm" onclick="openScanDirsModal()" data-i18n-title="btn_scan_dirs" title="扫描目录"><i data-lucide="folder-search"></i> <span data-i18n="btn_scan_dirs">目录</span></button>
         </div>
 
         <!-- 通知 -->
         <div class="notice notice-info">
             <i data-lucide="info"></i>
-            <div>选择 FTP 服务器后，勾选要发送的文件，点击「发送到 Switch」即可。上传路径为空时发送到 FTP 根目录。</div>
+            <div data-i18n="notice_info">选择 FTP 服务器后，勾选要发送的文件，点击「发送到 Switch」即可。上传路径为空时发送到 FTP 根目录。</div>
         </div>
 
         <!-- 标签页 -->
         <div class="tabs">
-            <button class="tab active" data-tab="transfer" onclick="switchTab('transfer')"><i data-lucide="package"></i> 文件列表</button>
-            <button class="tab" data-tab="log" onclick="switchTab('log')"><i data-lucide="clipboard-list"></i> 日志</button>
+            <button class="tab active" data-tab="transfer" onclick="switchTab('transfer')"><i data-lucide="package"></i> <span data-i18n="tab_files">文件列表</span></button>
+            <button class="tab" data-tab="log" onclick="switchTab('log')"><i data-lucide="clipboard-list"></i> <span data-i18n="tab_log">日志</span></button>
         </div>
 
         <!-- 文件列表标签页 -->
         <div class="tab-content active" id="tab-transfer">
             <!-- 工具栏 -->
             <div class="toolbar">
-                <div class="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll()" title="全选/取消"></div>
-                <span class="file-count" id="fileCount">已选 0 / 0 个文件</span>
+                <div class="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll()" data-i18n-title="select_all" title="全选/取消"></div>
+                <span class="file-count" id="fileCount"></span>
+                <label class="filter-toggle" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.8rem;color:var(--text-secondary);">
+                    <div class="checkbox" id="showAllCheckbox" onclick="toggleShowAll()"></div>
+                    <span data-i18n="show_all_files">显示所有文件</span>
+                </label>
+                <div class="search-box">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="searchInput" oninput="onSearchInput()" data-i18n-ph="ph_search" placeholder="搜索文件名...">
+                </div>
                 <div class="spacer"></div>
-                <button class="btn btn-success" id="btnSend" onclick="startTransfer()" disabled><i data-lucide="upload"></i> 发送到 Switch</button>
+                <button class="btn btn-sm" onclick="rescanFiles()" data-i18n-title="btn_refresh_list" title="刷新文件列表"><i data-lucide="refresh-cw"></i> <span data-i18n="btn_refresh_list" style="font-size:0.75rem;">刷新</span></button>
+                <button class="btn btn-danger btn-sm" id="btnCancel" onclick="cancelTransfer()" style="display:none;"><i data-lucide="x"></i> <span data-i18n="btn_cancel">取消</span></button>
+                <button class="btn btn-success" id="btnSend" onclick="startTransfer()" disabled><i data-lucide="upload"></i> <span data-i18n="btn_send">发送到 Switch</span></button>
             </div>
 
             <!-- 文件列表 -->
-            <div class="file-list-header">
-                <div></div>
-                <div>文件名</div>
-                <div>大小</div>
-                <div>类型</div>
-                <div>修改时间</div>
-                <div></div>
-            </div>
-            <div class="file-list-body" id="fileListBody">
-                <div class="empty-state">
-                    <i data-lucide="folder-open"></i>
-                    <p>正在扫描文件...</p>
+            <div class="file-list-wrapper">
+                <div class="file-list-header">
+                    <div></div>
+                    <div data-i18n="col_name">文件名</div>
+                    <div data-i18n="col_size">大小</div>
+                    <div data-i18n="col_modified">修改时间</div>
                 </div>
+                <div class="file-list-body" id="fileListBody">
+                    <div class="empty-state">
+                        <div class="spinner"></div>
+                        <p data-i18n="scanning">正在扫描文件...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分页 -->
+            <div class="pagination-bar" id="paginationBar" style="display:none;">
+                <span id="pageInfo"></span>
+                <div class="spacer"></div>
+                <select id="pageSizeSelect" onchange="changePageSize()" class="page-size-select">
+                    <option value="10">10 / 页</option>
+                    <option value="15">15 / 页</option>
+                    <option value="20">20 / 页</option>
+                </select>
+                <button class="btn btn-sm btn-icon" id="btnPrevPage" onclick="changePage(-1)"><i data-lucide="chevron-left"></i></button>
+                <button class="btn btn-sm btn-icon" id="btnNextPage" onclick="changePage(1)"><i data-lucide="chevron-right"></i></button>
             </div>
 
             <!-- 进度 -->
@@ -259,7 +395,7 @@
                 <div class="progress-stats">
                     <span id="progressLabel">0.0% (0 B / 0 B)</span>
                     <span id="progressSpeed">0 B/s</span>
-                    <span id="progressEta">剩余: --</span>
+                    <span id="progressEta"></span>
                 </div>
                 <div class="progress-file" id="progressFile"></div>
             </div>
@@ -268,7 +404,7 @@
         <!-- 日志标签页 -->
         <div class="tab-content" id="tab-log">
             <div style="margin-bottom:8px;">
-                <button class="btn btn-sm" onclick="clearLog()"><i data-lucide="trash-2"></i> 清空日志</button>
+                <button class="btn btn-sm" onclick="clearLog()"><i data-lucide="trash-2"></i> <span data-i18n="btn_clear_log">清空日志</span></button>
             </div>
             <div class="log-area" id="logArea"></div>
         </div>
@@ -277,38 +413,38 @@
     <!-- 添加 FTP 服务器模态框 -->
     <div class="modal-overlay hidden" id="addServerModal">
         <div class="modal" role="dialog">
-            <h2><i data-lucide="server"></i> 添加 FTP 服务器</h2>
+            <h2><i data-lucide="server"></i> <span data-i18n="modal_add_title">添加 FTP 服务器</span></h2>
             <div class="form-row">
-                <label>名称</label>
-                <input type="text" id="srvName" placeholder="例如：我的Switch">
+                <label data-i18n="label_name">名称</label>
+                <input type="text" id="srvName" data-i18n-ph="ph_name" placeholder="例如：我的Switch">
             </div>
             <div class="form-row-2col">
                 <div class="form-row">
-                    <label>FTP 地址</label>
+                    <label data-i18n="label_host">FTP 地址</label>
                     <input type="text" id="srvHost" placeholder="192.168.1.100">
                 </div>
                 <div class="form-row">
-                    <label>端口</label>
+                    <label data-i18n="label_port">端口</label>
                     <input type="number" id="srvPort" value="5000">
                 </div>
             </div>
             <div class="form-row-2col">
                 <div class="form-row">
-                    <label>用户名</label>
+                    <label data-i18n="label_user">用户名</label>
                     <input type="text" id="srvUser" value="ftp" placeholder="ftp">
                 </div>
                 <div class="form-row">
-                    <label>密码</label>
-                    <input type="password" id="srvPass" placeholder="留空则匿名">
+                    <label data-i18n="label_pass">密码</label>
+                    <input type="password" id="srvPass" data-i18n-ph="ph_pass" placeholder="留空则匿名">
                 </div>
             </div>
             <div class="form-row">
-                <label>上传路径（为空则上传到 FTP 根目录）</label>
+                <label data-i18n="label_path">上传路径（为空则上传到 FTP 根目录）</label>
                 <input type="text" id="srvPath" placeholder="/switch/nsp">
             </div>
             <div class="modal-actions">
-                <button class="btn" onclick="closeModal('addServerModal')">取消</button>
-                <button class="btn btn-primary" onclick="addServer()"><i data-lucide="check"></i> 添加</button>
+                <button class="btn" onclick="closeModal('addServerModal')" data-i18n="btn_cancel_text">取消</button>
+                <button class="btn btn-primary" onclick="addServer()"><i data-lucide="check"></i> <span data-i18n="btn_add_text">添加</span></button>
             </div>
         </div>
     </div>
@@ -316,32 +452,371 @@
     <!-- 服务器列表管理模态框 -->
     <div class="modal-overlay hidden" id="serverListModal">
         <div class="modal" role="dialog">
-            <h2><i data-lucide="settings"></i> 管理 FTP 服务器</h2>
+            <h2><i data-lucide="settings"></i> <span data-i18n="modal_manage_title">管理 FTP 服务器</span></h2>
             <div id="serverListBody"></div>
             <div class="modal-actions">
-                <button class="btn btn-primary" onclick="closeModal('serverListModal')">关闭</button>
+                <button class="btn btn-primary" onclick="closeModal('serverListModal')" data-i18n="btn_close">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 帮助 / 排查模态框 -->
+    <div class="modal-overlay hidden" id="helpModal">
+        <div class="modal" role="dialog">
+            <h2><i data-lucide="help-circle"></i> <span data-i18n="help_title">帮助 & 排查</span></h2>
+            <p class="modal-sub" data-i18n="help_sub">FTP 连接问题排查指南</p>
+            <div id="helpBody"></div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="closeModal('helpModal')" data-i18n="btn_ok">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 扫描目录管理模态框 -->
+    <div class="modal-overlay hidden" id="scanDirsModal">
+        <div class="modal" role="dialog">
+            <h2><i data-lucide="folder-search"></i> <span data-i18n="modal_scan_dirs_title">扫描目录管理</span></h2>
+            <p class="modal-sub" data-i18n="modal_scan_dirs_sub">添加或删除要扫描的目录（支持多个路径）</p>
+            <div class="form-row" style="display:flex;gap:8px;align-items:flex-end;">
+                <div style="flex:1;">
+                    <label data-i18n="label_add_dir">添加目录路径</label>
+                    <input type="text" id="newScanDir" data-i18n-ph="ph_dir_path" placeholder="/path/to/switch/games">
+                </div>
+                <button class="btn btn-primary" onclick="addScanDir()" style="height:38px;"><i data-lucide="plus"></i> <span data-i18n="btn_add_text">添加</span></button>
+            </div>
+            <div id="scanDirsList" style="margin-top:16px;"></div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="closeModal('scanDirsModal')" data-i18n="btn_close">关闭</button>
             </div>
         </div>
     </div>
 
     <script>
         // ============================================================
+        // i18n 多语言
+        // ============================================================
+        const I18N = {
+            zh: {
+                app_title: "Switch DBI FTP 传输工具",
+                subtitle: "自动扫描目录 · 多文件勾选 · FTP 传输到 Switch DBI",
+                status_not_checked: "未检测",
+                btn_test_conn: "测试连接",
+                btn_add: "添加",
+                btn_manage: "管理",
+                btn_scan_dirs: "目录",
+                modal_scan_dirs_title: "扫描目录管理",
+                modal_scan_dirs_sub: "添加或删除要扫描的目录（支持多个路径）",
+                label_add_dir: "添加目录路径",
+                ph_dir_path: "/path/to/switch/games",
+                no_dirs: "暂无扫描目录",
+                msg_dir_empty: "路径不能为空",
+                msg_dir_exists: "路径已存在",
+                log_add_dir: "已添加扫描目录: ",
+                log_del_dir: "已删除扫描目录: ",
+                log_dir_failed: "操作失败: ",
+                msg_confirm_del_dir: "确定删除扫描目录「{n}」吗？",
+                btn_rescan: "刷新文件列表",
+                btn_refresh_list: "刷新",
+                btn_help: "帮助",
+                btn_lang: "切换语言",
+                notice_info: "选择 FTP 服务器后，勾选要发送的文件，点击「发送到 Switch」即可。上传路径为空时发送到 FTP 根目录。",
+                tab_files: "文件列表",
+                tab_log: "日志",
+                select_all: "全选/取消",
+                btn_send: "发送到 Switch",
+                btn_cancel: "取消",
+                col_name: "文件名",
+                col_size: "大小",
+                col_type: "类型",
+                col_modified: "修改时间",
+                scanning: "正在扫描文件...",
+                no_files: "未找到 Switch 安装包",
+                no_files_hint: "请在 config.yml 中配置 scan_dirs 目录",
+                rescanning: "正在重新扫描...",
+                selected_count: "已选 {s} / {t} 个文件",
+                show_all_files: "显示所有文件",
+                ph_search: "搜索文件名...",
+                page_info: "第 {c}/{t} 页（共 {n} 个文件）",
+                no_search_results: "未找到匹配文件",
+                modal_add_title: "添加 FTP 服务器",
+                label_name: "名称",
+                ph_name: "例如：我的Switch",
+                label_host: "FTP 地址",
+                label_port: "端口",
+                label_user: "用户名",
+                label_pass: "密码",
+                ph_pass: "留空则匿名",
+                label_path: "上传路径（为空则上传到 FTP 根目录）",
+                btn_cancel_text: "取消",
+                btn_add_text: "添加",
+                modal_manage_title: "管理 FTP 服务器",
+                no_servers: "暂无服务器，请点击「添加」",
+                btn_close: "关闭",
+                btn_ok: "OK",
+                btn_clear_log: "清空日志",
+                help_title: "帮助 & 排查",
+                help_sub: "FTP 连接问题排查指南",
+                help_1: "Switch 上已安装 DBI 插件，并在 DBI 中选择「后端 (Backend)」模式，开启 FTP 服务",
+                help_2: "确认电脑和 Switch 在同一局域网，可以互相 ping 通",
+                help_3: "检查 FTP 地址和端口是否正确（DBI 默认 FTP 端口通常为 5000）",
+                help_4: "用户名通常为 ftp，密码一般留空（匿名登录）",
+                help_5: "上传路径为空时文件发送到 FTP 根目录，可根据需要填写如 /switch/nsp",
+                help_6: "传输超时后会自动断开，请检查网络稳定性后重试",
+                eta_prefix: "剩余: ",
+                eta_calc: "计算中...",
+                msg_select_server: "请先选择 FTP 服务器",
+                msg_select_files: "请勾选要发送的文件",
+                msg_name_host_empty: "名称和地址不能为空",
+                msg_add_failed: "添加失败",
+                msg_request_failed: "请求失败: ",
+                msg_confirm_delete: "确定删除服务器「{n}」吗？",
+                msg_confirm_cancel: "确定取消当前传输吗？",
+                msg_name_exists: "服务器名称 '{n}' 已存在",
+                log_scan_done: "扫描完成，共 {n} 个文件",
+                log_scan_failed: "扫描文件失败: ",
+                log_config_failed: "加载配置失败: ",
+                log_add_server: "已添加服务器: ",
+                log_del_server: "已删除服务器: ",
+                log_cancelling: "正在取消传输...",
+                log_cancel_failed: "取消请求失败: ",
+                log_start_transfer: "开始传输 {n} 个文件到 {s}...",
+                log_task_created: "任务已创建，共 {n} 个文件，总计 {sz}",
+                log_task_failed: "创建传输任务失败: ",
+                log_transfer_failed: "传输请求失败: ",
+                log_transfer_done: "传输完成！",
+                log_transfer_error: "传输失败: ",
+                log_transfer_cancelled: "传输已取消",
+                log_unknown_error: "未知错误",
+                log_del_failed: "删除失败: ",
+                status_unknown: "未选择",
+                status_unconfigured: "未配置",
+                status_checking: "检测中...",
+                status_check_failed: "检测失败: ",
+                please_add: "— 请添加服务器 —",
+                no_password: " 无密码",
+                root_dir: "根目录",
+                path_label: "路径",
+                delete: "删除",
+            },
+            en: {
+                app_title: "Switch DBI FTP Transfer Tool",
+                subtitle: "Auto-scan directories · Multi-file selection · FTP transfer to Switch DBI",
+                status_not_checked: "Not checked",
+                btn_test_conn: "Test",
+                btn_add: "Add",
+                btn_manage: "Manage",
+                btn_scan_dirs: "Dirs",
+                modal_scan_dirs_title: "Scan Directory Management",
+                modal_scan_dirs_sub: "Add or remove directories to scan (multiple paths supported)",
+                label_add_dir: "Add directory path",
+                ph_dir_path: "/path/to/switch/games",
+                no_dirs: "No scan directories",
+                msg_dir_empty: "Path cannot be empty",
+                msg_dir_exists: "Path already exists",
+                log_add_dir: "Scan directory added: ",
+                log_del_dir: "Scan directory deleted: ",
+                log_dir_failed: "Operation failed: ",
+                msg_confirm_del_dir: "Delete scan directory \"{n}\"?",
+                btn_rescan: "Refresh file list",
+                btn_refresh_list: "Refresh",
+                btn_help: "Help",
+                btn_lang: "Switch language",
+                notice_info: "Select an FTP server, check the files to send, then click \"Send to Switch\". Empty upload path = FTP root.",
+                tab_files: "Files",
+                tab_log: "Log",
+                select_all: "Select all / None",
+                btn_send: "Send to Switch",
+                btn_cancel: "Cancel",
+                col_name: "Name",
+                col_size: "Size",
+                col_type: "Type",
+                col_modified: "Modified",
+                scanning: "Scanning files...",
+                no_files: "No Switch packages found",
+                no_files_hint: "Please configure scan_dirs in config.yml",
+                rescanning: "Re-scanning...",
+                selected_count: "Selected {s} / {t} files",
+                show_all_files: "Show all files",
+                ph_search: "Search filename...",
+                page_info: "Page {c}/{t} ({n} files)",
+                no_search_results: "No matching files",
+                modal_add_title: "Add FTP Server",
+                label_name: "Name",
+                ph_name: "e.g. My Switch",
+                label_host: "FTP Host",
+                label_port: "Port",
+                label_user: "Username",
+                label_pass: "Password",
+                ph_pass: "Leave empty for anonymous",
+                label_path: "Upload path (empty = FTP root)",
+                btn_cancel_text: "Cancel",
+                btn_add_text: "Add",
+                modal_manage_title: "Manage FTP Servers",
+                no_servers: "No servers yet. Click \"Add\".",
+                btn_close: "Close",
+                btn_ok: "OK",
+                btn_clear_log: "Clear log",
+                help_title: "Help & Troubleshooting",
+                help_sub: "FTP connection troubleshooting guide",
+                help_1: "DBI plugin installed on Switch; in DBI select \"Backend\" mode and enable FTP service",
+                help_2: "Ensure your PC and Switch are on the same LAN and can ping each other",
+                help_3: "Verify the FTP host and port are correct (DBI default FTP port is usually 5000)",
+                help_4: "Username is typically \"ftp\"; password is usually left empty (anonymous)",
+                help_5: "Empty upload path sends to FTP root; set e.g. /switch/nsp if needed",
+                help_6: "Transfer auto-disconnects on timeout; check network stability and retry",
+                eta_prefix: "ETA: ",
+                eta_calc: "Calculating...",
+                msg_select_server: "Please select an FTP server first",
+                msg_select_files: "Please select files to send",
+                msg_name_host_empty: "Name and host cannot be empty",
+                msg_add_failed: "Add failed",
+                msg_request_failed: "Request failed: ",
+                msg_confirm_delete: "Delete server \"{n}\"?",
+                msg_confirm_cancel: "Cancel the current transfer?",
+                msg_name_exists: "Server name '{n}' already exists",
+                log_scan_done: "Scan complete, {n} files found",
+                log_scan_failed: "Scan failed: ",
+                log_config_failed: "Load config failed: ",
+                log_add_server: "Server added: ",
+                log_del_server: "Server deleted: ",
+                log_cancelling: "Cancelling transfer...",
+                log_cancel_failed: "Cancel request failed: ",
+                log_start_transfer: "Starting transfer of {n} files to {s}...",
+                log_task_created: "Task created: {n} files, total {sz}",
+                log_task_failed: "Create transfer task failed: ",
+                log_transfer_failed: "Transfer request failed: ",
+                log_transfer_done: "Transfer complete!",
+                log_transfer_error: "Transfer failed: ",
+                log_transfer_cancelled: "Transfer cancelled",
+                log_unknown_error: "Unknown error",
+                log_del_failed: "Delete failed: ",
+                status_unknown: "Not selected",
+                status_unconfigured: "Not configured",
+                status_checking: "Checking...",
+                status_check_failed: "Check failed: ",
+                please_add: "— Add a server —",
+                no_password: " no password",
+                root_dir: "root",
+                path_label: "Path",
+                delete: "Delete",
+            }
+        };
+
+        let currentLang = localStorage.getItem('lang') || 'zh';
+
+        function t(key, vars) {
+            let s = (I18N[currentLang] || I18N.zh)[key] || (I18N.zh)[key] || key;
+            if (vars) {
+                for (const k in vars) {
+                    s = s.replace(`{${k}}`, vars[k]);
+                }
+            }
+            return s;
+        }
+
+        function applyI18n() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = t(el.dataset.i18n);
+            });
+            document.querySelectorAll('[data-i18n-title]').forEach(el => {
+                el.title = t(el.dataset.i18nTitle);
+            });
+            document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+                el.placeholder = t(el.dataset.i18nPh);
+            });
+            document.getElementById('langLabel').textContent = currentLang === 'zh' ? 'EN' : '中文';
+            document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+            renderHelp();
+            // 重新渲染动态内容
+            renderServerSelect();
+            updateFileCount();
+            if (allFiles.length === 0) {
+                const body = document.getElementById('fileListBody');
+                if (body.querySelector('.empty-state')) {
+                    body.innerHTML = `<div class="empty-state"><i data-lucide="folder-x"></i><p>${t('no_files')}</p><p style="font-size:0.75rem;margin-top:4px;">${t('no_files_hint')}</p></div>`;
+                    lucide.createIcons();
+                }
+            }
+        }
+
+        function toggleLang() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('lang', currentLang);
+            saveUiSettings();
+            applyI18n();
+            lucide.createIcons();
+        }
+
+        function renderHelp() {
+            const body = document.getElementById('helpBody');
+            body.innerHTML = '';
+            for (let i = 1; i <= 6; i++) {
+                const p = document.createElement('p');
+                p.innerHTML = `<b>${i}.</b> ${t('help_' + i)}`;
+                body.appendChild(p);
+            }
+        }
+
+        // ============================================================
         // 全局状态
         // ============================================================
         let allFiles = [];
-        let selectedFiles = new Set(); // 存储文件路径
+        let selectedFiles = new Set();
         let servers = [];
         let currentTaskId = null;
         let pollTimer = null;
-        let currentServerStatus = {}; // server_name -> {status, message}
+        let currentServerStatus = {};
+        let showAllFiles = false;
+        let currentPage = 1;
+        let pageSize = 10;
+        let searchKeyword = '';
 
         // ============================================================
         // 初始化
         // ============================================================
         async function init() {
+            await loadUiSettings();
+            applyI18n();
             lucide.createIcons();
             await loadConfig();
             await loadFiles();
+        }
+
+        async function loadUiSettings() {
+            try {
+                const res = await fetch('/api/ui-settings');
+                const data = await res.json();
+                if (data.page_size) {
+                    pageSize = data.page_size;
+                    document.getElementById('pageSizeSelect').value = pageSize;
+                }
+                if (data.show_all_files !== undefined) {
+                    showAllFiles = data.show_all_files;
+                    document.getElementById('showAllCheckbox').className = 'checkbox' + (showAllFiles ? ' checked' : '');
+                }
+                if (data.language) {
+                    currentLang = data.language;
+                    localStorage.setItem('lang', currentLang);
+                }
+            } catch (e) {
+                console.error('Load UI settings failed:', e);
+            }
+        }
+
+        let saveUiTimer = null;
+        function saveUiSettings() {
+            clearTimeout(saveUiTimer);
+            saveUiTimer = setTimeout(async () => {
+                try {
+                    await fetch('/api/ui-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ page_size: pageSize, show_all_files: showAllFiles, language: currentLang })
+                    });
+                } catch (e) {
+                    console.error('Save UI settings failed:', e);
+                }
+            }, 500);
         }
 
         // ============================================================
@@ -354,7 +829,7 @@
                 servers = data.servers || [];
                 renderServerSelect();
             } catch (e) {
-                log('加载配置失败: ' + e.message, 'error');
+                log(t('log_config_failed') + e.message, 'error');
             }
         }
 
@@ -362,8 +837,8 @@
             const sel = document.getElementById('ftpSelect');
             sel.innerHTML = '';
             if (servers.length === 0) {
-                sel.innerHTML = '<option value="">— 请添加服务器 —</option>';
-                updateFtpStatus('unknown', '未配置');
+                sel.innerHTML = `<option value="">${t('please_add')}</option>`;
+                updateFtpStatus('unknown', t('status_unconfigured'));
                 return;
             }
             servers.forEach(s => {
@@ -372,7 +847,6 @@
                 opt.textContent = `${s.name} (${s.host}:${s.port})`;
                 sel.appendChild(opt);
             });
-            // 恢复之前选中的
             const prev = sel.dataset.prev;
             if (prev && servers.some(s => s.name === prev)) {
                 sel.value = prev;
@@ -385,15 +859,14 @@
             sel.dataset.prev = sel.value;
             const name = sel.value;
             if (!name) {
-                updateFtpStatus('unknown', '未选择');
+                updateFtpStatus('unknown', t('status_unknown'));
                 return;
             }
-            // 使用缓存的状态
             const cached = currentServerStatus[name];
             if (cached) {
                 updateFtpStatus(cached.status, cached.message);
             } else {
-                updateFtpStatus('unknown', '未检测');
+                updateFtpStatus('unknown', t('status_not_checked'));
             }
             updateSendButton();
         }
@@ -402,7 +875,7 @@
             const sel = document.getElementById('ftpSelect');
             const name = sel.value;
             if (!name) return;
-            updateFtpStatus('checking', '检测中...');
+            updateFtpStatus('checking', t('status_checking'));
             document.getElementById('btnCheckFtp').disabled = true;
             try {
                 const res = await fetch(`/api/servers/${encodeURIComponent(name)}/status`);
@@ -411,7 +884,7 @@
                 updateFtpStatus(data.status, data.message);
                 log(`FTP [${name}]: ${data.message}`, data.status === 'connected' ? 'success' : 'error');
             } catch (e) {
-                updateFtpStatus('error', '检测失败: ' + e.message);
+                updateFtpStatus('error', t('status_check_failed') + e.message);
             } finally {
                 document.getElementById('btnCheckFtp').disabled = false;
             }
@@ -439,49 +912,123 @@
         // ============================================================
         async function loadFiles() {
             try {
-                const res = await fetch('/api/files');
+                const url = showAllFiles ? '/api/files?all=true' : '/api/files';
+                const res = await fetch(url);
                 const data = await res.json();
                 allFiles = data.files || [];
                 renderFileList();
             } catch (e) {
-                log('扫描文件失败: ' + e.message, 'error');
+                log(t('log_scan_failed') + e.message, 'error');
             }
+        }
+
+        function toggleShowAll() {
+            showAllFiles = !showAllFiles;
+            const cb = document.getElementById('showAllCheckbox');
+            cb.className = 'checkbox' + (showAllFiles ? ' checked' : '');
+            // 切换后清空选中状态并重新加载
+            selectedFiles.clear();
+            currentPage = 1;
+            saveUiSettings();
+            loadFiles();
         }
 
         async function rescanFiles() {
             const body = document.getElementById('fileListBody');
-            body.innerHTML = '<div class="empty-state"><div class="spinner"></div><p>正在重新扫描...</p></div>';
+            body.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>${t('rescanning')}</p></div>`;
             await loadFiles();
-            log(`扫描完成，共 ${allFiles.length} 个文件`, 'info');
+            log(t('log_scan_done', { n: allFiles.length }), 'info');
+        }
+
+        function getFilteredFiles() {
+            if (!searchKeyword) return allFiles;
+            const kw = searchKeyword.toLowerCase();
+            return allFiles.filter(f => f.name.toLowerCase().includes(kw));
         }
 
         function renderFileList() {
             const body = document.getElementById('fileListBody');
+            const filtered = getFilteredFiles();
+
             if (allFiles.length === 0) {
-                body.innerHTML = '<div class="empty-state"><i data-lucide="folder-x"></i><p>未找到 Switch 安装包</p><p style="font-size:0.75rem;margin-top:4px;">请在 config.yml 中配置 scan_dirs 目录</p></div>';
+                body.innerHTML = `<div class="empty-state"><i data-lucide="folder-x"></i><p>${t('no_files')}</p><p style="font-size:0.75rem;margin-top:4px;">${t('no_files_hint')}</p></div>`;
                 lucide.createIcons();
+                updatePagination(0);
                 updateFileCount();
                 return;
             }
+
+            if (filtered.length === 0) {
+                body.innerHTML = `<div class="empty-state"><i data-lucide="search-x"></i><p>${t('no_search_results')}</p></div>`;
+                lucide.createIcons();
+                updatePagination(0);
+                updateFileCount();
+                return;
+            }
+
+            // 分页
+            const totalPages = Math.ceil(filtered.length / pageSize);
+            if (currentPage > totalPages) currentPage = 1;
+            const start = (currentPage - 1) * pageSize;
+            const pageFiles = filtered.slice(start, start + pageSize);
+
             body.innerHTML = '';
-            allFiles.forEach((f, idx) => {
+            pageFiles.forEach(f => {
                 const item = document.createElement('div');
                 item.className = 'file-item';
                 item.dataset.path = f.path;
-                const ext = (f.name.split('.').pop() || '').toLowerCase();
+                const ext = (f.ext || f.name.split('.').pop() || '').toLowerCase();
+                const knownTypes = ['nsp', 'nsz', 'xci', 'xcz'];
+                const typeClass = knownTypes.includes(ext) ? ext : 'other';
                 const isChecked = selectedFiles.has(f.path);
                 item.innerHTML = `
                     <div class="checkbox ${isChecked ? 'checked' : ''}" onclick="toggleFile('${escapeAttr(f.path)}')"></div>
-                    <div class="fname" title="${escapeAttr(f.path)}">${escapeHtml(f.name)}</div>
+                    <div class="fname-cell" title="${escapeAttr(f.path)}">
+                        <span class="fname">${escapeHtml(f.name)}</span>
+                        <span class="ftype ${typeClass}">${ext || 'file'}</span>
+                    </div>
                     <div class="fsize">${formatSize(f.size)}</div>
-                    <div><span class="ftype ${ext}">${ext}</span></div>
                     <div class="fdate">${f.mtime_str}</div>
-                    <div></div>
                 `;
                 body.appendChild(item);
             });
             updateFileCount();
             updateSelectAllCheckbox();
+            updatePagination(filtered.length);
+        }
+
+        function onSearchInput() {
+            searchKeyword = document.getElementById('searchInput').value.trim();
+            currentPage = 1;
+            renderFileList();
+        }
+
+        function changePage(delta) {
+            const filtered = getFilteredFiles();
+            const totalPages = Math.ceil(filtered.length / pageSize);
+            currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
+            renderFileList();
+        }
+
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('pageSizeSelect').value);
+            currentPage = 1;
+            saveUiSettings();
+            renderFileList();
+        }
+
+        function updatePagination(totalFiltered) {
+            const bar = document.getElementById('paginationBar');
+            if (totalFiltered === 0) {
+                bar.style.display = 'none';
+                return;
+            }
+            bar.style.display = 'flex';
+            const totalPages = Math.ceil(totalFiltered / pageSize);
+            document.getElementById('pageInfo').textContent =
+                t('page_info', { c: currentPage, t: totalPages, n: totalFiltered });
+            document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+            document.getElementById('btnNextPage').disabled = currentPage >= totalPages;
         }
 
         function toggleFile(path) {
@@ -495,10 +1042,12 @@
         }
 
         function toggleSelectAll() {
-            if (selectedFiles.size === allFiles.length) {
-                selectedFiles.clear();
+            const filtered = getFilteredFiles();
+            const allSelected = filtered.every(f => selectedFiles.has(f.path));
+            if (allSelected) {
+                filtered.forEach(f => selectedFiles.delete(f.path));
             } else {
-                allFiles.forEach(f => selectedFiles.add(f.path));
+                filtered.forEach(f => selectedFiles.add(f.path));
             }
             renderFileList();
             updateSendButton();
@@ -506,17 +1055,22 @@
 
         function updateSelectAllCheckbox() {
             const cb = document.getElementById('selectAllCheckbox');
+            const filtered = getFilteredFiles();
             cb.className = 'checkbox';
-            if (selectedFiles.size === allFiles.length && allFiles.length > 0) {
-                cb.classList.add('checked');
-            } else if (selectedFiles.size > 0) {
-                cb.classList.add('indeterminate');
+            if (filtered.length > 0) {
+                const selectedCount = filtered.filter(f => selectedFiles.has(f.path)).length;
+                if (selectedCount === filtered.length) {
+                    cb.classList.add('checked');
+                } else if (selectedCount > 0) {
+                    cb.classList.add('indeterminate');
+                }
             }
         }
 
         function updateFileCount() {
+            const filtered = getFilteredFiles();
             document.getElementById('fileCount').textContent =
-                `已选 ${selectedFiles.size} / ${allFiles.length} 个文件`;
+                t('selected_count', { s: selectedFiles.size, t: allFiles.length });
             updateSelectAllCheckbox();
         }
 
@@ -530,19 +1084,20 @@
         // ============================================================
         async function startTransfer() {
             const server = document.getElementById('ftpSelect').value;
-            if (!server) { alert('请先选择 FTP 服务器'); return; }
-            if (selectedFiles.size === 0) { alert('请勾选要发送的文件'); return; }
+            if (!server) { alert(t('msg_select_server')); return; }
+            if (selectedFiles.size === 0) { alert(t('msg_select_files')); return; }
 
             const files = allFiles.filter(f => selectedFiles.has(f.path)).map(f => ({
                 name: f.name, path: f.path, size: f.size
             }));
 
             document.getElementById('btnSend').disabled = true;
+            document.getElementById('btnCancel').style.display = 'inline-flex';
             document.getElementById('progressContainer').classList.add('active');
             document.getElementById('progressFill').className = 'progress-bar-fill';
             document.getElementById('progressFill').style.width = '0%';
 
-            log(`开始传输 ${files.length} 个文件到 ${server}...`, 'info');
+            log(t('log_start_transfer', { n: files.length, s: server }), 'info');
 
             try {
                 const res = await fetch('/api/transfer', {
@@ -553,17 +1108,19 @@
                 const data = await res.json();
                 if (res.ok) {
                     currentTaskId = data.task_id;
-                    log(`任务已创建，共 ${data.total_files} 个文件，总计 ${formatSize(data.total_bytes)}`, 'info');
+                    log(t('log_task_created', { n: data.total_files, sz: formatSize(data.total_bytes) }), 'info');
                     startPolling();
                 } else {
-                    log('创建传输任务失败: ' + (data.error || '未知错误'), 'error');
+                    log(t('log_task_failed') + (data.error || t('log_unknown_error')), 'error');
                     document.getElementById('progressContainer').classList.remove('active');
                     document.getElementById('btnSend').disabled = false;
+                    document.getElementById('btnCancel').style.display = 'none';
                 }
             } catch (e) {
-                log('传输请求失败: ' + e.message, 'error');
+                log(t('log_transfer_failed') + e.message, 'error');
                 document.getElementById('progressContainer').classList.remove('active');
                 document.getElementById('btnSend').disabled = false;
+                document.getElementById('btnCancel').style.display = 'none';
             }
         }
 
@@ -587,7 +1144,7 @@
                 document.getElementById('progressLabel').textContent =
                     `${data.progress}% (${formatSize(data.uploaded_bytes)} / ${formatSize(data.total_bytes)})`;
                 document.getElementById('progressSpeed').textContent = data.speed_str;
-                document.getElementById('progressEta').textContent = '剩余: ' + data.eta;
+                document.getElementById('progressEta').textContent = t('eta_prefix') + data.eta;
                 document.getElementById('progressFile').textContent =
                     data.current_file ? `[${data.current_file_index}/${data.total_files}] ${data.current_file} — ${data.current_file_progress}%` : '';
 
@@ -610,15 +1167,15 @@
                     stopPolling();
                     if (data.status === 'completed') {
                         fill.classList.add('complete');
-                        log('传输完成！', 'success');
+                        log(t('log_transfer_done'), 'success');
                     } else if (data.status === 'error') {
                         fill.classList.add('error');
-                        log('传输失败: ' + (data.error || '未知错误'), 'error');
+                        log(t('log_transfer_error') + (data.error || t('log_unknown_error')), 'error');
                     } else {
-                        log('传输已取消', 'warning');
+                        log(t('log_transfer_cancelled'), 'warning');
                     }
                     document.getElementById('btnSend').disabled = false;
-                    // 清理选中
+                    document.getElementById('btnCancel').style.display = 'none';
                     if (data.status === 'completed') {
                         selectedFiles.clear();
                         renderFileList();
@@ -626,18 +1183,18 @@
                     currentTaskId = null;
                 }
             } catch (e) {
-                console.error('轮询失败:', e);
+                console.error('Poll failed:', e);
             }
         }
 
         async function cancelTransfer() {
             if (!currentTaskId) return;
-            if (!confirm('确定取消当前传输吗？')) return;
+            if (!confirm(t('msg_confirm_cancel'))) return;
             try {
                 await fetch(`/api/transfer/${currentTaskId}/cancel`, { method: 'POST' });
-                log('正在取消传输...', 'warning');
+                log(t('log_cancelling'), 'warning');
             } catch (e) {
-                log('取消请求失败: ' + e.message, 'error');
+                log(t('log_cancel_failed') + e.message, 'error');
             }
         }
 
@@ -654,6 +1211,11 @@
             document.getElementById('serverListModal').classList.remove('hidden');
         }
 
+        function openHelp() {
+            renderHelp();
+            document.getElementById('helpModal').classList.remove('hidden');
+        }
+
         function closeModal(id) {
             document.getElementById(id).classList.add('hidden');
         }
@@ -667,7 +1229,7 @@
             const upload_path = document.getElementById('srvPath').value.trim();
 
             if (!name || !host) {
-                alert('名称和地址不能为空');
+                alert(t('msg_name_host_empty'));
                 return;
             }
 
@@ -679,40 +1241,38 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    log(`已添加服务器: ${name}`, 'success');
+                    log(t('log_add_server') + name, 'success');
                     await loadConfig();
-                    // 自动选中新添加的
                     document.getElementById('ftpSelect').value = name;
                     onServerChange();
                     closeModal('addServerModal');
-                    // 清空表单
                     ['srvName', 'srvHost', 'srvPass', 'srvPath'].forEach(id => document.getElementById(id).value = '');
                 } else {
-                    alert(data.error || '添加失败');
+                    alert(data.error || t('msg_add_failed'));
                 }
             } catch (e) {
-                alert('请求失败: ' + e.message);
+                alert(t('msg_request_failed') + e.message);
             }
         }
 
         function renderServerList() {
             const body = document.getElementById('serverListBody');
             if (servers.length === 0) {
-                body.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:24px;">暂无服务器，请点击「添加」</p>';
+                body.innerHTML = `<p style="color:var(--text-secondary);text-align:center;padding:24px;">${t('no_servers')}</p>`;
                 return;
             }
             body.innerHTML = '';
             servers.forEach(s => {
                 const item = document.createElement('div');
                 item.className = 'server-item';
-                const hasPw = s.has_password ? ' ••••' : ' 无密码';
+                const hasPw = s.has_password ? ' ••••' : t('no_password');
                 item.innerHTML = `
                     <div class="server-info">
                         <div class="server-name">${escapeHtml(s.name)}</div>
-                        <div class="server-detail">${escapeHtml(s.host)}:${s.port} · ${escapeHtml(s.username || 'anonymous')}${hasPw} · 路径: ${escapeHtml(s.upload_path || '根目录')}</div>
+                        <div class="server-detail">${escapeHtml(s.host)}:${s.port} · ${escapeHtml(s.username || 'anonymous')}${hasPw} · ${t('path_label')}: ${escapeHtml(s.upload_path || t('root_dir'))}</div>
                     </div>
                     <div class="server-actions">
-                        <button class="btn btn-sm btn-danger" onclick="deleteServer('${escapeAttr(s.name)}')"><i data-lucide="trash-2"></i> 删除</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteServer('${escapeAttr(s.name)}')"><i data-lucide="trash-2"></i> ${t('delete')}</button>
                     </div>
                 `;
                 body.appendChild(item);
@@ -721,15 +1281,94 @@
         }
 
         async function deleteServer(name) {
-            if (!confirm(`确定删除服务器「${name}」吗？`)) return;
+            if (!confirm(t('msg_confirm_delete', { n: name }))) return;
             try {
                 await fetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' });
-                log(`已删除服务器: ${name}`, 'info');
+                log(t('log_del_server') + name, 'info');
                 delete currentServerStatus[name];
                 await loadConfig();
                 renderServerList();
             } catch (e) {
-                alert('删除失败: ' + e.message);
+                alert(t('log_del_failed') + e.message);
+            }
+        }
+
+        // ============================================================
+        // 扫描目录管理
+        // ============================================================
+        async function openScanDirsModal() {
+            await loadScanDirs();
+            document.getElementById('scanDirsModal').classList.remove('hidden');
+        }
+
+        async function loadScanDirs() {
+            try {
+                const res = await fetch('/api/scan-dirs');
+                const data = await res.json();
+                renderScanDirs(data.scan_dirs || []);
+            } catch (e) {
+                log(t('log_dir_failed') + e.message, 'error');
+            }
+        }
+
+        function renderScanDirs(dirs) {
+            const body = document.getElementById('scanDirsList');
+            if (dirs.length === 0) {
+                body.innerHTML = `<p style="color:var(--text-secondary);text-align:center;padding:24px;">${t('no_dirs')}</p>`;
+                return;
+            }
+            body.innerHTML = '';
+            dirs.forEach(d => {
+                const item = document.createElement('div');
+                item.className = 'server-item';
+                item.innerHTML = `
+                    <div class="server-info">
+                        <div class="server-detail">${escapeHtml(d)}</div>
+                    </div>
+                    <div class="server-actions">
+                        <button class="btn btn-sm btn-danger" onclick="deleteScanDir('${escapeAttr(d)}')"><i data-lucide="trash-2"></i> ${t('delete')}</button>
+                    </div>
+                `;
+                body.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        async function addScanDir() {
+            const path = document.getElementById('newScanDir').value.trim();
+            if (!path) { alert(t('msg_dir_empty')); return; }
+            try {
+                const res = await fetch('/api/scan-dirs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log(t('log_add_dir') + path, 'success');
+                    document.getElementById('newScanDir').value = '';
+                    renderScanDirs(data.scan_dirs);
+                } else {
+                    alert(data.error || t('msg_dir_exists'));
+                }
+            } catch (e) {
+                alert(t('log_dir_failed') + e.message);
+            }
+        }
+
+        async function deleteScanDir(path) {
+            if (!confirm(t('msg_confirm_del_dir', { n: path }))) return;
+            try {
+                const res = await fetch(`/api/scan-dirs?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok) {
+                    log(t('log_del_dir') + path, 'info');
+                    renderScanDirs(data.scan_dirs);
+                } else {
+                    alert(data.error || t('log_dir_failed'));
+                }
+            } catch (e) {
+                alert(t('log_dir_failed') + e.message);
             }
         }
 
@@ -740,7 +1379,7 @@
             const area = document.getElementById('logArea');
             const entry = document.createElement('div');
             entry.className = 'log-entry' + (level !== 'info' ? ` log-${level}` : '');
-            const ts = time || new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            const ts = time || new Date().toLocaleTimeString(currentLang === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
             entry.textContent = `[${ts}] ${msg}`;
             area.appendChild(entry);
             area.scrollTop = area.scrollHeight;

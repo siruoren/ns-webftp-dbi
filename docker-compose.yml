@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  ns-webftp-dbi:
+    build: .
+    container_name: ns-webftp-dbi
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      - FLASK_DEBUG=0
+      - HOST=0.0.0.0
+      - PORT=8090
+    volumes:
+      # 持久化配置文件（FTP 服务器列表等）
+      - ./config.yml:/app/config.yml
+      # 挂载 Switch 游戏目录（在 config.yml 中 scan_dirs 配置为 /games）
+      # 修改下方路径为你的本地游戏目录
+      - ./games:/games
+      # 也可挂载多个目录，例如：
+      # - /path/to/your/nsp:/games/nsp:ro
+      # - /path/to/your/xci:/games/xci:ro

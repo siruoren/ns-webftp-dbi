@@ -60,6 +60,7 @@ class ConfigManager:
             "scan_dirs": [],
             "scan_extensions": DEFAULT_EXTENSIONS,
             "ftp_servers": [],
+            "ui_settings": {"page_size": 10, "show_all_files": False, "language": "zh"},
         }
 
     @staticmethod
@@ -78,8 +79,11 @@ class ConfigManager:
 class FileScanner:
     """扫描目录下所有 Switch 安装包"""
 
+    # 显示所有文件时排除的系统/隐藏文件
+    _SKIP_NAMES = {".ds_store", "thumbs.db", "desktop.ini", ".gitkeep"}
+
     @staticmethod
-    def scan(scan_dirs, extensions=None):
+    def scan(scan_dirs, extensions=None, show_all=False):
         if extensions is None:
             extensions = DEFAULT_EXTENSIONS
         ext_set = {e.lower() for e in extensions}
@@ -90,21 +94,27 @@ class FileScanner:
                 continue
             for root, dirs, files in os.walk(scan_dir):
                 for fname in files:
-                    if os.path.splitext(fname)[1].lower() in ext_set:
-                        fpath = os.path.join(root, fname)
-                        try:
-                            fsize = os.path.getsize(fpath)
-                            mtime = os.path.getmtime(fpath)
-                        except OSError:
-                            continue
-                        results.append({
-                            "name": fname,
-                            "path": fpath,
-                            "dir": root,
-                            "size": fsize,
-                            "mtime": mtime,
-                            "mtime_str": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),
-                        })
+                    # 跳过隐藏文件和系统文件
+                    if fname.startswith(".") or fname.lower() in FileScanner._SKIP_NAMES:
+                        continue
+                    ext = os.path.splitext(fname)[1].lower()
+                    if not show_all and ext not in ext_set:
+                        continue
+                    fpath = os.path.join(root, fname)
+                    try:
+                        fsize = os.path.getsize(fpath)
+                        mtime = os.path.getmtime(fpath)
+                    except OSError:
+                        continue
+                    results.append({
+                        "name": fname,
+                        "path": fpath,
+                        "dir": root,
+                        "size": fsize,
+                        "mtime": mtime,
+                        "mtime_str": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),
+                        "ext": ext,
+                    })
         # 按修改时间倒序（最新在前）
         results.sort(key=lambda x: x["mtime"], reverse=True)
         return results
@@ -145,6 +155,7 @@ class FTPManager:
     def upload_files(task_id, server_info, file_list):
         """在后台线程中上传文件"""
         from ftplib import FTP, error_perm
+        import socket
         task = _transfer_tasks[task_id]
         total_bytes = sum(f["size"] for f in file_list)
         task["total_bytes"] = total_bytes
@@ -162,16 +173,26 @@ class FTPManager:
         last_bytes = 0
         last_time = time.time()
 
+        # 超时保护常量
+        CONNECT_TIMEOUT = 15       # 连接超时
+        TRANSFER_TIMEOUT = 60      # 传输读写超时（单次操作无数据超过此值则断开）
+        KEEPALIVE_INTERVAL = 30    # 文件之间发送 NOOP 保活
+
         def log(msg, level="info"):
             timestamp = datetime.now().strftime("%H:%M:%S")
             task["log"].append({"time": timestamp, "msg": msg, "level": level})
 
+        ftp = None
         try:
             ftp = FTP()
-            ftp.connect(server_info["host"], int(server_info["port"]), timeout=15)
+            ftp.connect(server_info["host"], int(server_info["port"]), timeout=CONNECT_TIMEOUT)
             ftp.login(server_info.get("username") or "anonymous",
                       server_info.get("password") or "")
             log(f"已连接到 {server_info['host']}:{server_info['port']}", "info")
+
+            # 设置传输阶段的 socket 超时
+            if ftp.sock:
+                ftp.sock.settimeout(TRANSFER_TIMEOUT)
 
             upload_path = server_info.get("upload_path", "").strip()
             if upload_path:
@@ -192,6 +213,13 @@ class FTPManager:
                 if task.get("cancelled"):
                     log("传输已取消", "warning")
                     break
+
+                # 文件之间发送 NOOP 保活（心跳检测）
+                if idx > 0:
+                    try:
+                        ftp.voidcmd("NOOP")
+                    except Exception:
+                        log("心跳检测失败，连接可能已断开", "warning")
 
                 fname = finfo["name"]
                 fpath = finfo["path"]
@@ -231,15 +259,25 @@ class FTPManager:
                 task["status"] = "completed"
                 log("所有文件传输完成！", "success")
             ftp.quit()
+        except socket.timeout:
+            log(f"传输超时：{TRANSFER_TIMEOUT}秒内无数据流动，连接已断开", "error")
+            task["status"] = "error"
+            task["error"] = f"传输超时（{TRANSFER_TIMEOUT}s 无数据）"
+            if ftp:
+                try:
+                    ftp.close()
+                except Exception:
+                    pass
         except Exception as e:
             msg = str(e)
             log(f"传输错误: {msg}", "error")
             task["status"] = "error"
             task["error"] = msg
-            try:
-                ftp.quit()
-            except Exception:
-                pass
+            if ftp:
+                try:
+                    ftp.quit()
+                except Exception:
+                    pass
         finally:
             task["end_time"] = time.time()
 
@@ -257,6 +295,23 @@ def _format_size(num_bytes):
             return f"{num_bytes:.1f} {unit}"
         num_bytes /= 1024.0
     return f"{num_bytes:.1f} PB"
+
+
+# ============================================================
+# 日志保留时长：24 小时
+LOG_RETENTION_SECONDS = 24 * 3600
+
+
+def cleanup_old_tasks():
+    """清理超过 24 小时的传输任务及其日志"""
+    now = time.time()
+    with _transfer_lock:
+        to_remove = [
+            tid for tid, task in _transfer_tasks.items()
+            if task.get("end_time") and (now - task["end_time"]) > LOG_RETENTION_SECONDS
+        ]
+        for tid in to_remove:
+            del _transfer_tasks[tid]
 
 
 # ============================================================
@@ -293,16 +348,74 @@ def get_config():
 
 @app.route("/api/files")
 def list_files():
+    cleanup_old_tasks()
     cfg = ConfigManager.load()
-    files = FileScanner.scan(cfg.get("scan_dirs", []), cfg.get("scan_extensions"))
+    show_all = request.args.get("all", "false").lower() == "true"
+    files = FileScanner.scan(cfg.get("scan_dirs", []), cfg.get("scan_extensions"), show_all=show_all)
     return jsonify({"files": files, "total": len(files)})
 
 
 @app.route("/api/files/scan", methods=["POST"])
 def rescan_files():
+    cleanup_old_tasks()
     cfg = ConfigManager.load()
-    files = FileScanner.scan(cfg.get("scan_dirs", []), cfg.get("scan_extensions"))
+    show_all = request.args.get("all", "false").lower() == "true"
+    files = FileScanner.scan(cfg.get("scan_dirs", []), cfg.get("scan_extensions"), show_all=show_all)
     return jsonify({"files": files, "total": len(files)})
+
+
+@app.route("/api/scan-dirs", methods=["GET"])
+def list_scan_dirs():
+    cfg = ConfigManager.load()
+    return jsonify({"scan_dirs": cfg.get("scan_dirs", [])})
+
+
+@app.route("/api/scan-dirs", methods=["POST"])
+def add_scan_dir():
+    data = request.json
+    if not data or not data.get("path"):
+        return jsonify({"error": "路径不能为空"}), 400
+    path = data["path"].strip()
+    cfg = ConfigManager.load()
+    scan_dirs = cfg.get("scan_dirs", [])
+    if path in scan_dirs:
+        return jsonify({"error": "路径已存在"}), 400
+    scan_dirs.append(path)
+    cfg["scan_dirs"] = scan_dirs
+    ConfigManager.save(cfg)
+    return jsonify({"scan_dirs": scan_dirs})
+
+
+@app.route("/api/scan-dirs", methods=["DELETE"])
+def remove_scan_dir():
+    path = request.args.get("path", "").strip()
+    if not path:
+        return jsonify({"error": "路径不能为空"}), 400
+    cfg = ConfigManager.load()
+    scan_dirs = cfg.get("scan_dirs", [])
+    scan_dirs = [d for d in scan_dirs if d != path]
+    cfg["scan_dirs"] = scan_dirs
+    ConfigManager.save(cfg)
+    return jsonify({"scan_dirs": scan_dirs})
+
+
+@app.route("/api/ui-settings", methods=["GET"])
+def get_ui_settings():
+    cfg = ConfigManager.load()
+    defaults = ConfigManager._default_config()["ui_settings"]
+    settings = {**defaults, **cfg.get("ui_settings", {})}
+    return jsonify(settings)
+
+
+@app.route("/api/ui-settings", methods=["POST"])
+def save_ui_settings():
+    data = request.json or {}
+    cfg = ConfigManager.load()
+    current = cfg.get("ui_settings", {})
+    current.update(data)
+    cfg["ui_settings"] = current
+    ConfigManager.save(cfg)
+    return jsonify({"ok": True, "ui_settings": current})
 
 
 @app.route("/api/servers", methods=["GET"])
@@ -380,6 +493,7 @@ def server_status(name):
 
 @app.route("/api/transfer", methods=["POST"])
 def start_transfer():
+    cleanup_old_tasks()
     data = request.json
     if not data:
         return jsonify({"error": "请求数据为空"}), 400
@@ -526,10 +640,11 @@ def delete_transfer(task_id):
 
 if __name__ == "__main__":
     cfg = ConfigManager.load()
-    host = cfg.get("server", {}).get("host", "0.0.0.0")
-    port = cfg.get("server", {}).get("port", 8090)
+    host = os.environ.get("HOST", cfg.get("server", {}).get("host", "0.0.0.0"))
+    port = int(os.environ.get("PORT", cfg.get("server", {}).get("port", 8090)))
+    debug = os.environ.get("FLASK_DEBUG", "1") == "1"
     print(f"Switch DBI FTP 传输工具启动中...")
     print(f"访问地址: http://localhost:{port}")
     print(f"扫描目录: {cfg.get('scan_dirs', [])}")
     print(f"FTP 服务器: {[s['name'] for s in cfg.get('ftp_servers', [])]}")
-    app.run(host=host, port=port, debug=True)
+    app.run(host=host, port=port, debug=debug)
