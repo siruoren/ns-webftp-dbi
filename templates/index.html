@@ -123,6 +123,47 @@
         }
         .page-size-select:hover { border-color: var(--accent); }
 
+        /* 上传列表 */
+        .tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 0.65rem; font-weight: 700; margin-left: 4px; }
+        .upload-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .upload-toolbar .spacer { flex: 1; }
+        .upload-count { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* 传输卡片 */
+        .transfer-card { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
+        .transfer-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border); }
+        .transfer-server { font-weight: 600; font-size: 0.85rem; }
+        .transfer-host { font-size: 0.7rem; color: var(--text-secondary); }
+        .transfer-progress-text { font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-mono); }
+        .transfer-overall-bar { flex: 1; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; min-width: 80px; }
+        .transfer-overall-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+
+        /* 状态标签 */
+        .status-badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        .status-badge.starting, .status-badge.transferring { background: #1a2639; color: #58a6ff; }
+        .status-badge.completed { background: #1a2e1a; color: #3fb950; }
+        .status-badge.cancelled { background: #3b2e1a; color: #d29922; }
+        .status-badge.error, .status-badge.failed { background: #2e1a1a; color: #f85149; }
+        .status-badge.pending { background: #2a2a2a; color: var(--text-secondary); }
+        .status-badge.uploading { background: #1a2639; color: #58a6ff; }
+
+        /* 上传文件行 */
+        .upload-file-item { display: grid; grid-template-columns: 32px 1fr auto auto; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+        .upload-file-item:last-child { border-bottom: none; }
+        .upload-fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; }
+        .upload-file-size { font-size: 0.7rem; color: var(--text-secondary); font-family: var(--font-mono); }
+        .mini-progress { width: 80px; height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; }
+        .mini-progress-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+        .mini-progress-fill.completed { background: #3fb950; }
+        .mini-progress-fill.uploading { background: #58a6ff; }
+        .mini-progress-fill.failed, .mini-progress-fill.cancelled { background: #f85149; }
+        .mini-progress-fill.pending { background: var(--border); }
+        .upload-percent { font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-secondary); width: 42px; text-align: right; }
+        .upload-file-error { font-size: 0.65rem; color: #f85149; grid-column: 2; }
+
+        /* 传输卡片操作栏 */
+        .transfer-actions { display: flex; gap: 8px; padding: 8px 14px; background: var(--bg-tertiary); border-top: 1px solid var(--border); }
+
         /* 文件列表 */
         .file-list-wrapper { overflow-x: auto; border-radius: var(--radius); }
         .file-list-header, .file-item {
@@ -255,6 +296,13 @@
             .pagination-bar .spacer { display: none; }
             .pagination-bar #pageInfo { width: 100%; text-align: center; }
 
+            /* 上传列表 */
+            .upload-file-item { grid-template-columns: 28px 1fr auto; }
+            .upload-file-item .upload-file-size { display: none; }
+            .mini-progress { width: 60px; }
+            .transfer-header { flex-wrap: wrap; }
+            .transfer-overall-bar { width: 100%; flex-basis: 100%; margin-top: 4px; }
+
             /* 文件列表 - 保持桌面布局，横向滚动 */
             .file-list-body { max-height: 400px; }
 
@@ -337,6 +385,7 @@
         <!-- 标签页 -->
         <div class="tabs">
             <button class="tab active" data-tab="transfer" onclick="switchTab('transfer')"><i data-lucide="package"></i> <span data-i18n="tab_files">文件列表</span></button>
+            <button class="tab" data-tab="uploads" onclick="switchTab('uploads')"><i data-lucide="upload-cloud"></i> <span data-i18n="tab_uploads">上传列表</span><span class="tab-badge" id="uploadBadge" style="display:none;"></span></button>
             <button class="tab" data-tab="log" onclick="switchTab('log')"><i data-lucide="clipboard-list"></i> <span data-i18n="tab_log">日志</span></button>
         </div>
 
@@ -398,6 +447,22 @@
                     <span id="progressEta"></span>
                 </div>
                 <div class="progress-file" id="progressFile"></div>
+            </div>
+        </div>
+
+        <!-- 上传列表标签页 -->
+        <div class="tab-content" id="tab-uploads">
+            <div class="upload-toolbar">
+                <span class="upload-count" id="uploadCount"></span>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-danger" id="btnCancelSelected" onclick="cancelSelectedUploadFiles()" disabled><i data-lucide="x-circle"></i> <span data-i18n="btn_cancel_selected">取消选中</span></button>
+                <button class="btn btn-sm" onclick="refreshTransfers()"><i data-lucide="refresh-cw"></i> <span data-i18n="btn_refresh_list" style="font-size:0.75rem;">刷新</span></button>
+            </div>
+            <div id="transferList">
+                <div class="empty-state">
+                    <i data-lucide="upload-cloud"></i>
+                    <p data-i18n="no_transfers">暂无上传任务</p>
+                </div>
             </div>
         </div>
 
@@ -521,7 +586,22 @@
                 btn_lang: "切换语言",
                 notice_info: "选择 FTP 服务器后，勾选要发送的文件，点击「发送到 Switch」即可。上传路径为空时发送到 FTP 根目录。",
                 tab_files: "文件列表",
+                tab_uploads: "上传列表",
                 tab_log: "日志",
+                no_transfers: "暂无上传任务",
+                btn_cancel_selected: "取消选中",
+                btn_cancel_all: "全部取消",
+                btn_delete_transfer: "删除",
+                upload_status_pending: "等待中",
+                upload_status_uploading: "上传中",
+                upload_status_completed: "已完成",
+                upload_status_failed: "失败",
+                upload_status_cancelled: "已取消",
+                transfer_files: "{c}/{t} 文件",
+                msg_cancel_all_files: "确定取消此任务的所有待上传文件吗？",
+                msg_cancel_selected_files: "确定取消选中的文件吗？",
+                msg_confirm_delete_transfer: "确定删除此上传记录吗？",
+                log_transfer_started: "传输任务已创建，共 {n} 个文件",
                 select_all: "全选/取消",
                 btn_send: "发送到 Switch",
                 btn_cancel: "取消",
@@ -573,7 +653,9 @@
                 msg_confirm_cancel: "确定取消当前传输吗？",
                 msg_name_exists: "服务器名称 '{n}' 已存在",
                 log_scan_done: "扫描完成，共 {n} 个文件",
-                log_scan_failed: "扫描文件失败: ",
+                log_scan_failed: "扫描失败: ",
+                scan_in_progress: "刷新任务进行中，请稍候...",
+                log_scan_in_progress: "后台扫描任务进行中",
                 log_config_failed: "加载配置失败: ",
                 log_add_server: "已添加服务器: ",
                 log_del_server: "已删除服务器: ",
@@ -623,7 +705,22 @@
                 btn_lang: "Switch language",
                 notice_info: "Select an FTP server, check the files to send, then click \"Send to Switch\". Empty upload path = FTP root.",
                 tab_files: "Files",
+                tab_uploads: "Uploads",
                 tab_log: "Log",
+                no_transfers: "No transfers",
+                btn_cancel_selected: "Cancel Selected",
+                btn_cancel_all: "Cancel All",
+                btn_delete_transfer: "Delete",
+                upload_status_pending: "Pending",
+                upload_status_uploading: "Uploading",
+                upload_status_completed: "Completed",
+                upload_status_failed: "Failed",
+                upload_status_cancelled: "Cancelled",
+                transfer_files: "{c}/{t} files",
+                msg_cancel_all_files: "Cancel all pending files in this task?",
+                msg_cancel_selected_files: "Cancel selected files?",
+                msg_confirm_delete_transfer: "Delete this transfer record?",
+                log_transfer_started: "Transfer task created, {n} files",
                 select_all: "Select all / None",
                 btn_send: "Send to Switch",
                 btn_cancel: "Cancel",
@@ -676,6 +773,8 @@
                 msg_name_exists: "Server name '{n}' already exists",
                 log_scan_done: "Scan complete, {n} files found",
                 log_scan_failed: "Scan failed: ",
+                scan_in_progress: "Refresh task in progress, please wait...",
+                log_scan_in_progress: "Background scan in progress",
                 log_config_failed: "Load config failed: ",
                 log_add_server: "Server added: ",
                 log_del_server: "Server deleted: ",
@@ -770,6 +869,8 @@
         let currentPage = 1;
         let pageSize = 10;
         let searchKeyword = '';
+        let selectedUploadFiles = new Set();
+        let transferPollTimer = null;
 
         // ============================================================
         // 初始化
@@ -780,6 +881,16 @@
             lucide.createIcons();
             await loadConfig();
             await loadFiles();
+            // 加载上传列表，如果有活跃任务则开始轮询
+            await loadTransfers();
+            const res = await fetch('/api/transfers');
+            const data = await res.json();
+            const hasActive = (data.transfers || []).some(t =>
+                ['starting', 'transferring'].includes(t.status)
+            );
+            if (hasActive) {
+                startTransferPolling();
+            }
         }
 
         async function loadUiSettings() {
@@ -935,9 +1046,66 @@
 
         async function rescanFiles() {
             const body = document.getElementById('fileListBody');
+            const refreshBtn = document.querySelector('[onclick="rescanFiles()"]');
+            // 保存当前文件列表，以便扫描进行中时恢复
+            const prevFiles = allFiles;
+
+            // 显示加载状态
             body.innerHTML = `<div class="empty-state"><div class="spinner"></div><p>${t('rescanning')}</p></div>`;
-            await loadFiles();
-            log(t('log_scan_done', { n: allFiles.length }), 'info');
+            if (refreshBtn) {
+                refreshBtn.style.opacity = '0.6';
+                refreshBtn.style.pointerEvents = 'none';
+                const icon = refreshBtn.querySelector('[data-lucide]');
+                if (icon) icon.style.animation = 'spin 1s linear infinite';
+            }
+
+            try {
+                const res = await fetch('/api/files/scan', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.scanning) {
+                    // 后台已有扫描任务在运行，恢复原文件列表
+                    allFiles = prevFiles;
+                    renderFileList();
+                    log(t('scan_in_progress'), 'warn');
+                    showNotice(t('scan_in_progress'), 'warn');
+                } else {
+                    // 扫描完成
+                    allFiles = data.files || [];
+                    currentPage = 1;
+                    renderFileList();
+                    log(t('log_scan_done', { n: allFiles.length }), 'success');
+                }
+            } catch (e) {
+                allFiles = prevFiles;
+                renderFileList();
+                log(t('log_scan_failed') + e.message, 'error');
+            } finally {
+                // 恢复刷新按钮
+                if (refreshBtn) {
+                    refreshBtn.style.opacity = '';
+                    refreshBtn.style.pointerEvents = '';
+                    const icon = refreshBtn.querySelector('[data-lucide]');
+                    if (icon) icon.style.animation = '';
+                }
+            }
+        }
+
+        let _noticeTimer = null;
+        function showNotice(msg, type = 'info') {
+            const notice = document.getElementById('notice') || (() => {
+                const el = document.createElement('div');
+                el.id = 'notice';
+                el.className = 'notice';
+                const container = document.querySelector('.container');
+                container.insertBefore(el, container.firstChild.nextSibling);
+                return el;
+            })();
+            notice.className = `notice ${type}`;
+            notice.textContent = msg;
+            notice.style.display = 'block';
+            clearTimeout(_noticeTimer);
+            _noticeTimer = setTimeout(() => { notice.style.display = 'none'; }, 5000);
         }
 
         function getFilteredFiles() {
@@ -1092,10 +1260,6 @@
             }));
 
             document.getElementById('btnSend').disabled = true;
-            document.getElementById('btnCancel').style.display = 'inline-flex';
-            document.getElementById('progressContainer').classList.add('active');
-            document.getElementById('progressFill').className = 'progress-bar-fill';
-            document.getElementById('progressFill').style.width = '0%';
 
             log(t('log_start_transfer', { n: files.length, s: server }), 'info');
 
@@ -1108,19 +1272,23 @@
                 const data = await res.json();
                 if (res.ok) {
                     currentTaskId = data.task_id;
-                    log(t('log_task_created', { n: data.total_files, sz: formatSize(data.total_bytes) }), 'info');
-                    startPolling();
+                    log(t('log_transfer_started', { n: data.total_files }), 'success');
+                    // 清空文件选中状态
+                    selectedFiles.clear();
+                    renderFileList();
+                    updateSendButton();
+                    // 切换到上传列表
+                    switchTab('uploads');
+                    // 刷新上传列表
+                    await loadTransfers();
+                    startTransferPolling();
                 } else {
                     log(t('log_task_failed') + (data.error || t('log_unknown_error')), 'error');
-                    document.getElementById('progressContainer').classList.remove('active');
                     document.getElementById('btnSend').disabled = false;
-                    document.getElementById('btnCancel').style.display = 'none';
                 }
             } catch (e) {
                 log(t('log_transfer_failed') + e.message, 'error');
-                document.getElementById('progressContainer').classList.remove('active');
                 document.getElementById('btnSend').disabled = false;
-                document.getElementById('btnCancel').style.display = 'none';
             }
         }
 
@@ -1193,6 +1361,202 @@
             try {
                 await fetch(`/api/transfer/${currentTaskId}/cancel`, { method: 'POST' });
                 log(t('log_cancelling'), 'warning');
+            } catch (e) {
+                log(t('log_cancel_failed') + e.message, 'error');
+            }
+        }
+
+        // ============================================================
+        // 上传列表管理
+        // ============================================================
+        async function loadTransfers() {
+            try {
+                const res = await fetch('/api/transfers');
+                const data = await res.json();
+                renderTransfers(data.transfers || []);
+                updateUploadBadge(data.transfers || []);
+            } catch (e) {
+                console.error('Load transfers failed:', e);
+            }
+        }
+
+        function refreshTransfers() {
+            loadTransfers();
+        }
+
+        function startTransferPolling() {
+            stopTransferPolling();
+            transferPollTimer = setInterval(pollTransfers, 1000);
+        }
+
+        function stopTransferPolling() {
+            if (transferPollTimer) {
+                clearInterval(transferPollTimer);
+                transferPollTimer = null;
+            }
+        }
+
+        async function pollTransfers() {
+            try {
+                const res = await fetch('/api/transfers');
+                const data = await res.json();
+                const transfers = data.transfers || [];
+                renderTransfers(transfers);
+                updateUploadBadge(transfers);
+                // 如果没有活跃任务，停止轮询
+                const activeStatuses = ['starting', 'transferring'];
+                const hasActive = transfers.some(t => activeStatuses.includes(t.status));
+                if (!hasActive) {
+                    stopTransferPolling();
+                }
+            } catch (e) {
+                console.error('Poll transfers failed:', e);
+            }
+        }
+
+        function updateUploadBadge(transfers) {
+            const badge = document.getElementById('uploadBadge');
+            const activeCount = transfers.filter(t =>
+                ['starting', 'transferring'].includes(t.status)
+            ).length;
+            if (activeCount > 0) {
+                badge.textContent = activeCount;
+                badge.style.display = 'inline-flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function renderTransfers(transfers) {
+            const list = document.getElementById('transferList');
+            if (transfers.length === 0) {
+                list.innerHTML = `<div class="empty-state"><i data-lucide="upload-cloud"></i><p>${t('no_transfers')}</p></div>`;
+                lucide.createIcons();
+                document.getElementById('uploadCount').textContent = '';
+                document.getElementById('btnCancelSelected').disabled = true;
+                return;
+            }
+
+            const activeCount = transfers.filter(t => ['starting', 'transferring'].includes(t.status)).length;
+            document.getElementById('uploadCount').textContent = `${activeCount} ${currentLang === 'zh' ? '个进行中' : 'active'}`;
+
+            list.innerHTML = '';
+            transfers.forEach(tr => {
+                const card = document.createElement('div');
+                card.className = 'transfer-card';
+
+                const overallProgress = tr.total_bytes > 0
+                    ? (tr.uploaded_bytes / tr.total_bytes * 100).toFixed(1)
+                    : 0;
+                const completedFiles = (tr.files || []).filter(f => f.status === 'completed').length;
+                const totalFiles = tr.total_files || 0;
+
+                let statusClass = tr.status;
+                if (tr.status === 'error') statusClass = 'failed';
+
+                card.innerHTML = `
+                    <div class="transfer-header">
+                        <div>
+                            <span class="transfer-server">${escapeHtml(tr.server)}</span>
+                            <span class="transfer-host">${escapeHtml(tr.server_host || '')}</span>
+                        </div>
+                        <span class="transfer-progress-text">${overallProgress}% · ${t('transfer_files', { c: completedFiles, t: totalFiles })}</span>
+                        <div class="transfer-overall-bar"><div class="transfer-overall-fill" style="width:${overallProgress}%"></div></div>
+                        <span class="status-badge ${statusClass}">${t('upload_status_' + tr.status) || tr.status}</span>
+                    </div>
+                    <div class="transfer-files">
+                        ${(tr.files || []).map((f, idx) => {
+                            const fstatus = f.status;
+                            const fprogress = f.progress || 0;
+                            const canCancel = ['pending', 'uploading'].includes(fstatus);
+                            const isSelected = selectedUploadFiles.has(`${tr.id}:${idx}`);
+                            const fillClass = fstatus;
+                            const sizeStr = formatSize(f.size);
+                            return `
+                                <div class="upload-file-item">
+                                    <div class="checkbox ${isSelected ? 'checked' : ''}" ${canCancel ? `onclick="toggleUploadFileSelect('${tr.id}', ${idx})"` : 'style="visibility:hidden"'}></div>
+                                    <div>
+                                        <div class="upload-fname">${escapeHtml(f.name)}</div>
+                                        ${f.error ? `<div class="upload-file-error">${escapeHtml(f.error)}</div>` : ''}
+                                    </div>
+                                    <div class="upload-file-size">${sizeStr}</div>
+                                    <div style="display:flex;align-items:center;gap:6px;">
+                                        <div class="mini-progress"><div class="mini-progress-fill ${fillClass}" style="width:${fprogress}%"></div></div>
+                                        <span class="upload-percent">${fprogress}%</span>
+                                        <span class="status-badge ${fstatus}" style="font-size:0.6rem;">${t('upload_status_' + fstatus) || fstatus}</span>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <div class="transfer-actions">
+                        <button class="btn btn-sm btn-danger" onclick="cancelAllUploadFiles('${tr.id}')" ${!['starting', 'transferring'].includes(tr.status) ? 'disabled' : ''}><i data-lucide="x"></i> ${t('btn_cancel_all')}</button>
+                        <button class="btn btn-sm" onclick="deleteTransfer('${tr.id}')"><i data-lucide="trash-2"></i> ${t('btn_delete_transfer')}</button>
+                    </div>
+                `;
+                list.appendChild(card);
+            });
+            lucide.createIcons();
+
+            // 更新取消选中按钮状态
+            document.getElementById('btnCancelSelected').disabled = selectedUploadFiles.size === 0;
+        }
+
+        function toggleUploadFileSelect(taskId, fileIdx) {
+            const key = `${taskId}:${fileIdx}`;
+            if (selectedUploadFiles.has(key)) {
+                selectedUploadFiles.delete(key);
+            } else {
+                selectedUploadFiles.add(key);
+            }
+            // 只更新checkbox，不重新渲染整个列表
+            loadTransfers();
+        }
+
+        async function cancelSelectedUploadFiles() {
+            if (selectedUploadFiles.size === 0) return;
+            if (!confirm(t('msg_cancel_selected_files'))) return;
+
+            // 按 taskId 分组
+            const grouped = {};
+            selectedUploadFiles.forEach(key => {
+                const [taskId, idx] = key.split(':');
+                if (!grouped[taskId]) grouped[taskId] = [];
+                grouped[taskId].push(parseInt(idx));
+            });
+
+            try {
+                for (const [taskId, indices] of Object.entries(grouped)) {
+                    await fetch(`/api/transfer/${taskId}/cancel-files`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_indices: indices })
+                    });
+                }
+                selectedUploadFiles.clear();
+                log(t('log_cancelling'), 'warning');
+                await loadTransfers();
+            } catch (e) {
+                log(t('log_cancel_failed') + e.message, 'error');
+            }
+        }
+
+        async function cancelAllUploadFiles(taskId) {
+            if (!confirm(t('msg_cancel_all_files'))) return;
+            try {
+                await fetch(`/api/transfer/${taskId}/cancel`, { method: 'POST' });
+                log(t('log_cancelling'), 'warning');
+                await loadTransfers();
+            } catch (e) {
+                log(t('log_cancel_failed') + e.message, 'error');
+            }
+        }
+
+        async function deleteTransfer(taskId) {
+            if (!confirm(t('msg_confirm_delete_transfer'))) return;
+            try {
+                await fetch(`/api/transfer/${taskId}`, { method: 'DELETE' });
+                await loadTransfers();
             } catch (e) {
                 log(t('log_cancel_failed') + e.message, 'error');
             }

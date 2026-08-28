@@ -8,6 +8,7 @@ scan_extensions:
 - .nsz
 - .xci
 - .xcz
+scan_interval: 300
 ftp_servers:
 - name: Switch-1
   host: 192.168.1.100
@@ -15,3 +16,7 @@ ftp_servers:
   username: ftp
   password: ''
   upload_path: /switch/nsp
+ui_settings:
+  page_size: 20
+  show_all_files: false
+  language: zh

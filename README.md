@@ -46,6 +46,9 @@
 - **分页显示**：每页 10/15/20 条可选，支持翻页
 - **多扫描目录**：页面管理多个扫描路径，支持添加/删除
 - **配置持久化**：UI 设置（分页大小、显示所有文件、语言）自动保存到 config.yml
+- **上传列表**：独立的上传列表标签页，每个文件显示状态和进度百分比，支持勾选取消
+- **定时刷新**：后台定时扫描文件列表，刷新按钮触发后台任务，同一时间只允许一个刷新
+- **断点续传**：页面刷新不中断正在进行的上传任务，自动恢复进度显示
 
 ## 快速开始
 
@@ -146,7 +149,8 @@ ui_settings:
 |---|---|---|
 | GET | `/` | 主页面 |
 | GET | `/api/files` | 获取扫描到的文件列表（?all=true 显示所有文件） |
-| POST | `/api/files/scan` | 重新扫描目录 |
+| POST | `/api/files/scan` | 重新扫描目录（后台单任务，进行中返回提示） |
+| GET | `/api/files/scan-status` | 查询扫描状态 |
 | GET | `/api/scan-dirs` | 获取扫描目录列表 |
 | POST | `/api/scan-dirs` | 添加扫描目录 |
 | DELETE | `/api/scan-dirs?path=<path>` | 删除扫描目录 |
@@ -157,8 +161,10 @@ ui_settings:
 | DELETE | `/api/servers/<name>` | 删除 FTP 服务器 |
 | GET | `/api/servers/<name>/status` | 测试 FTP 连接状态 |
 | POST | `/api/transfer` | 创建传输任务 |
-| GET | `/api/transfer/<id>/status` | 查询传输进度 |
-| POST | `/api/transfer/<id>/cancel` | 取消传输 |
+| GET | `/api/transfers` | 获取所有传输任务列表 |
+| GET | `/api/transfer/<id>/status` | 查询传输进度（含每个文件状态） |
+| POST | `/api/transfer/<id>/cancel` | 取消整个传输任务 |
+| POST | `/api/transfer/<id>/cancel-files` | 取消指定文件（body: {file_indices: [0,2]}） |
 | DELETE | `/api/transfer/<id>` | 删除传输任务 |
 
 ## 使用前提

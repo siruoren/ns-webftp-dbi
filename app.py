@@ -59,6 +59,7 @@ class ConfigManager:
             "server": {"host": "0.0.0.0", "port": 8090},
             "scan_dirs": [],
             "scan_extensions": DEFAULT_EXTENSIONS,
+            "scan_interval": 300,
             "ftp_servers": [],
             "ui_settings": {"page_size": 10, "show_all_files": False, "language": "zh"},
         }
@@ -118,6 +119,85 @@ class FileScanner:
         # 按修改时间倒序（最新在前）
         results.sort(key=lambda x: x["mtime"], reverse=True)
         return results
+
+
+# ============================================================
+# 文件扫描管理（定时刷新 + 单任务锁）
+# ============================================================
+
+class FileScanManager:
+    """管理文件扫描缓存，定时后台刷新，同一时间只允许一个扫描任务"""
+
+    _instance = None
+    _init_lock = threading.Lock()
+
+    def __init__(self):
+        self._scan_lock = threading.Lock()
+        self._scanning = False
+        self._cached_files = []
+        self._cached_all_files = []
+        self._last_scan_time = 0
+        self._stop_event = threading.Event()
+        self._thread = None
+
+    @classmethod
+    def get(cls):
+        if cls._instance is None:
+            with cls._init_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    def start_auto_scan(self, interval=60):
+        """启动定时后台扫描线程"""
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._auto_loop, args=(interval,), daemon=True)
+        self._thread.start()
+
+    def stop_auto_scan(self):
+        """停止定时扫描"""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _auto_loop(self, interval):
+        """定时扫描循环"""
+        while not self._stop_event.is_set():
+            try:
+                self.do_scan()
+            except Exception as e:
+                print(f"[FileScanManager] auto scan error: {e}")
+            self._stop_event.wait(interval)
+
+    def do_scan(self):
+        """执行一次扫描，如果已有扫描在运行则返回 False"""
+        if not self._scan_lock.acquire(blocking=False):
+            return False
+        try:
+            self._scanning = True
+            cfg = ConfigManager.load()
+            scan_dirs = cfg.get("scan_dirs", [])
+            exts = cfg.get("scan_extensions", DEFAULT_EXTENSIONS)
+            self._cached_files = FileScanner.scan(scan_dirs, exts, show_all=False)
+            self._cached_all_files = FileScanner.scan(scan_dirs, exts, show_all=True)
+            self._last_scan_time = time.time()
+            return True
+        finally:
+            self._scanning = False
+            self._scan_lock.release()
+
+    @property
+    def is_scanning(self):
+        return self._scanning
+
+    @property
+    def last_scan_time(self):
+        return self._last_scan_time
+
+    def get_files(self, show_all=False):
+        return self._cached_all_files if show_all else self._cached_files
 
 
 # ============================================================
@@ -214,6 +294,11 @@ class FTPManager:
                     log("传输已取消", "warning")
                     break
 
+                # Check if this specific file was cancelled
+                if task["files"][idx]["status"] == "cancelled":
+                    log(f"跳过已取消: {finfo['name']}", "warning")
+                    continue
+
                 # 文件之间发送 NOOP 保活（心跳检测）
                 if idx > 0:
                     try:
@@ -228,14 +313,18 @@ class FTPManager:
                 task["current_file_index"] = idx
                 task["current_file_bytes"] = 0
                 task["current_file_size"] = fsize
+                task["files"][idx]["status"] = "uploading"
+                task["files"][idx]["uploaded_bytes"] = 0
                 log(f"正在上传: {fname} ({_format_size(fsize)})", "info")
 
                 # 使用回调跟踪进度
                 block_size = 65536  # 64KB 块
 
-                def callback(block, _task=task, _fname=fname, _fsize=fsize):
+                def callback(block, _task=task, _idx=idx, _fname=fname, _fsize=fsize):
                     _task["current_file_bytes"] += len(block)
                     _task["uploaded_bytes"] += len(block)
+                    _task["files"][_idx]["uploaded_bytes"] = _task["current_file_bytes"]
+                    _task["files"][_idx]["progress"] = round(_task["current_file_bytes"] / _fsize * 100, 1) if _fsize > 0 else 0
                     # 速度采样
                     nonlocal last_bytes, last_time
                     now = time.time()
@@ -246,11 +335,20 @@ class FTPManager:
                         last_bytes = _task["uploaded_bytes"]
                         last_time = now
 
-                with open(fpath, "rb") as f:
-                    ftp.storbinary(f"STOR {fname}", f, blocksize=block_size, callback=callback)
+                try:
+                    with open(fpath, "rb") as f:
+                        # STOR 默认会覆盖已存在的同名文件（FTP 行为）
+                        ftp.storbinary(f"STOR {fname}", f, blocksize=block_size, callback=callback)
+                    if not task.get("cancelled") and task["files"][idx]["status"] != "cancelled":
+                        task["files"][idx]["status"] = "completed"
+                        task["files"][idx]["progress"] = 100
+                        log(f"完成: {fname}", "success")
+                except Exception as e:
+                    task["files"][idx]["status"] = "failed"
+                    task["files"][idx]["error"] = str(e)
+                    log(f"上传失败: {fname} - {e}", "error")
+                    # Continue to next file instead of aborting
 
-                if not task.get("cancelled"):
-                    log(f"完成: {fname}", "success")
                 task["current_file_index"] = idx + 1
 
             if task.get("cancelled"):
@@ -349,19 +447,47 @@ def get_config():
 @app.route("/api/files")
 def list_files():
     cleanup_old_tasks()
-    cfg = ConfigManager.load()
     show_all = request.args.get("all", "false").lower() == "true"
-    files = FileScanner.scan(cfg.get("scan_dirs", []), cfg.get("scan_extensions"), show_all=show_all)
-    return jsonify({"files": files, "total": len(files)})
+    mgr = FileScanManager.get()
+    files = mgr.get_files(show_all=show_all)
+    return jsonify({
+        "files": files,
+        "total": len(files),
+        "scanning": mgr.is_scanning,
+        "last_scan_time": mgr.last_scan_time,
+    })
 
 
 @app.route("/api/files/scan", methods=["POST"])
 def rescan_files():
     cleanup_old_tasks()
-    cfg = ConfigManager.load()
+    mgr = FileScanManager.get()
+    # 如果已有扫描任务在运行，返回提示
+    if mgr.is_scanning:
+        return jsonify({
+            "scanning": True,
+            "message": "刷新任务进行中",
+            "total": len(mgr.get_files()),
+        })
+    # 执行扫描（同步等待完成）
+    mgr.do_scan()
     show_all = request.args.get("all", "false").lower() == "true"
-    files = FileScanner.scan(cfg.get("scan_dirs", []), cfg.get("scan_extensions"), show_all=show_all)
-    return jsonify({"files": files, "total": len(files)})
+    files = mgr.get_files(show_all=show_all)
+    return jsonify({
+        "files": files,
+        "total": len(files),
+        "scanning": False,
+        "last_scan_time": mgr.last_scan_time,
+    })
+
+
+@app.route("/api/files/scan-status")
+def scan_status():
+    mgr = FileScanManager.get()
+    return jsonify({
+        "scanning": mgr.is_scanning,
+        "last_scan_time": mgr.last_scan_time,
+    })
 
 
 @app.route("/api/scan-dirs", methods=["GET"])
@@ -547,10 +673,23 @@ def start_transfer():
         "current_file_size": 0,
         "log": [],
         "server": server_name,
+        "server_host": f"{server_info['host']}:{server_info['port']}",
         "cancelled": False,
         "start_time": None,
         "end_time": None,
         "avg_speed": 0,
+        "files": [
+            {
+                "name": f["name"],
+                "path": f["path"],
+                "size": f["size"],
+                "status": "pending",  # pending, uploading, completed, failed, cancelled
+                "uploaded_bytes": 0,
+                "progress": 0,
+                "error": None,
+            }
+            for f in file_list
+        ],
     }
     with _transfer_lock:
         _transfer_tasks[task_id] = task
@@ -616,6 +755,7 @@ def transfer_status(task_id):
         "log": task["log"][-50:],
         "avg_speed": task.get("avg_speed", 0),
         "error": task.get("error", ""),
+        "files": task.get("files", []),
     })
 
 
@@ -638,11 +778,68 @@ def delete_transfer(task_id):
     return jsonify({"error": "任务不存在"}), 404
 
 
+@app.route("/api/transfers")
+def list_transfers():
+    cleanup_old_tasks()
+    with _transfer_lock:
+        tasks = []
+        for tid, task in _transfer_tasks.items():
+            tasks.append({
+                "id": tid,
+                "status": task["status"],
+                "server": task.get("server", ""),
+                "server_host": task.get("server_host", ""),
+                "total_files": task["total_files"],
+                "total_bytes": task["total_bytes"],
+                "uploaded_bytes": task["uploaded_bytes"],
+                "current_file": task["current_file"],
+                "current_file_index": task["current_file_index"],
+                "start_time": task.get("start_time"),
+                "end_time": task.get("end_time"),
+                "files": task.get("files", []),
+            })
+    # Sort: active first, then by start_time descending
+    active_statuses = {"starting", "transferring"}
+    tasks.sort(key=lambda t: (
+        0 if t["status"] in active_statuses else 1,
+        -(t.get("start_time") or 0)
+    ))
+    return jsonify({"transfers": tasks})
+
+
+@app.route("/api/transfer/<task_id>/cancel-files", methods=["POST"])
+def cancel_files(task_id):
+    data = request.json or {}
+    file_indices = data.get("file_indices", [])
+    with _transfer_lock:
+        task = _transfer_tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+    cancelled_count = 0
+    for idx in file_indices:
+        if 0 <= idx < len(task.get("files", [])):
+            if task["files"][idx]["status"] in ("pending", "uploading"):
+                task["files"][idx]["status"] = "cancelled"
+                cancelled_count += 1
+    return jsonify({"ok": True, "cancelled": cancelled_count})
+
+
 if __name__ == "__main__":
     cfg = ConfigManager.load()
     host = os.environ.get("HOST", cfg.get("server", {}).get("host", "0.0.0.0"))
     port = int(os.environ.get("PORT", cfg.get("server", {}).get("port", 8090)))
     debug = os.environ.get("FLASK_DEBUG", "1") == "1"
+
+    # 启动时执行初始扫描
+    scan_mgr = FileScanManager.get()
+    scan_mgr.do_scan()
+    print(f"初始扫描完成: {len(scan_mgr.get_files())} 个安装包")
+
+    # 启动定时后台扫描（默认 300 秒）
+    scan_interval = int(cfg.get("scan_interval", 300))
+    scan_mgr.start_auto_scan(scan_interval)
+    print(f"定时扫描已启动: 每 {scan_interval} 秒刷新一次")
+
     print(f"Switch DBI FTP 传输工具启动中...")
     print(f"访问地址: http://localhost:{port}")
     print(f"扫描目录: {cfg.get('scan_dirs', [])}")
