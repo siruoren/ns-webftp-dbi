@@ -57,6 +57,11 @@ def _get_server_lock(server_name):
         return _server_locks[server_name]
 
 
+# 操作日志：按实例名分组存储，每条 {ts, msg, level}
+_server_logs = {}
+_server_logs_lock = threading.Lock()
+_MAX_LOG_ENTRIES = 500  # 每个实例最多保留的日志条目数
+
 # ============================================================
 # 配置管理
 # ============================================================
@@ -584,6 +589,24 @@ def cleanup_old_tasks():
                 del _transfer_tasks[tid]
 
 
+def cleanup_old_logs():
+    """清理超过 24 小时的操作日志（按实例分组）"""
+    now = time.time()
+    with _server_logs_lock:
+        for server in list(_server_logs.keys()):
+            entries = _server_logs[server]
+            # 过滤掉超过 24 小时的日志条目
+            entries = deque(
+                (e for e in entries if now - e["ts"] <= LOG_RETENTION_SECONDS),
+                maxlen=_MAX_LOG_ENTRIES,
+            )
+            if entries:
+                _server_logs[server] = entries
+            else:
+                # 没有日志条目则删除该实例的 key
+                del _server_logs[server]
+
+
 # ============================================================
 # API 路由
 # ============================================================
@@ -990,6 +1013,7 @@ def list_transfers():
     now = time.time()
     if now - _last_cleanup_ts >= _CLEANUP_INTERVAL:
         cleanup_old_tasks()
+        cleanup_old_logs()
         _last_cleanup_ts = now
     # 仅在锁内获取任务引用列表，序列化在锁外完成以减少锁持有时间
     with _transfer_lock:
@@ -1095,6 +1119,55 @@ def retry_files(task_id):
     thread.start()
 
     return jsonify({"ok": True, "retried": reset_count})
+
+
+# ============================================================
+# 操作日志 API：按实例分组存储，保留 24 小时
+# ============================================================
+
+@app.route("/api/logs/<server>", methods=["POST"])
+def add_server_log(server):
+    """添加一条操作日志到指定实例"""
+    data = request.json or {}
+    msg = (data.get("msg") or "").strip()
+    level = data.get("level") or "info"
+    ts = data.get("ts") or time.time()
+    if not msg:
+        return jsonify({"ok": False, "error": "msg is required"}), 400
+    entry = {"ts": float(ts), "msg": msg, "level": level}
+    with _server_logs_lock:
+        if server not in _server_logs:
+            _server_logs[server] = deque(maxlen=_MAX_LOG_ENTRIES)
+        _server_logs[server].append(entry)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/logs/<server>", methods=["GET"])
+def get_server_log(server):
+    """获取指定实例的操作日志（24 小时内）"""
+    now = time.time()
+    with _server_logs_lock:
+        entries = list(_server_logs.get(server, []))
+    # 过滤超过 24 小时的条目（读取时兜底清理）
+    entries = [e for e in entries if now - e["ts"] <= LOG_RETENTION_SECONDS]
+    # 转换为前端可读格式
+    result = []
+    for e in entries:
+        result.append({
+            "time": datetime.fromtimestamp(e["ts"]).strftime("%H:%M:%S"),
+            "msg": e["msg"],
+            "level": e["level"],
+        })
+    return jsonify({"logs": result})
+
+
+@app.route("/api/logs/<server>", methods=["DELETE"])
+def clear_server_log(server):
+    """清空指定实例的操作日志"""
+    with _server_logs_lock:
+        if server in _server_logs:
+            del _server_logs[server]
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
