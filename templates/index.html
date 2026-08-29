@@ -1997,6 +1997,10 @@
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
+            // 切换到上传列表标签时，自动刷新并按当前实例过滤显示
+            if (tab === 'uploads') {
+                loadTransfers();
+            }
         }
 
         // ============================================================
