@@ -7,3 +7,4 @@ README.md
 **/*.xcz
 **/*.nsp
 .workbuddy
+__pycache__/

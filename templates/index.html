@@ -1004,7 +1004,6 @@
                 updateFtpStatus('unknown', t('status_unknown'));
                 return;
             }
-            log(t('log_switch_server') + name, 'info');
             const cached = currentServerStatus[name];
             if (cached) {
                 updateFtpStatus(cached.status, cached.message);
@@ -1020,6 +1019,9 @@
             if (_serverChangeTimer) clearTimeout(_serverChangeTimer);
             _serverChangeTimer = setTimeout(async () => {
                 _serverChangeTimer = null;
+                // 先加载新实例的历史操作日志（按实例分组，保留24小时），再记录切换日志
+                await loadServerLogs(name);
+                log(t('log_switch_server') + name, 'info');
                 // 刷新上传列表（按当前实例隔离显示），并使用返回数据检查待上传或进行中任务
                 const all = await loadTransfers();
                 const hasActive = (all || []).some(t =>
@@ -1984,11 +1986,42 @@
             entry.textContent = `[${ts}] ${msg}`;
             area.appendChild(entry);
             area.scrollTop = area.scrollHeight;
+            // 异步上报到服务端，按当前实例分组存储（保留 24 小时）
+            const server = getCurrentServerName() || '__system__';
+            fetch(`/api/logs/${encodeURIComponent(server)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ msg, level })
+            }).catch(() => { /* 上报失败不影响前端显示 */ });
+        }
+
+        // 从服务端加载指定实例的操作日志并渲染到日志区
+        async function loadServerLogs(server) {
+            server = server || getCurrentServerName() || '__system__';
+            try {
+                const res = await fetch(`/api/logs/${encodeURIComponent(server)}`);
+                const data = await res.json();
+                const area = document.getElementById('logArea');
+                area.innerHTML = '';
+                (data.logs || []).forEach(e => {
+                    const entry = document.createElement('div');
+                    entry.className = 'log-entry' + (e.level !== 'info' ? ` log-${e.level}` : '');
+                    entry.textContent = `[${e.time}] ${e.msg}`;
+                    area.appendChild(entry);
+                });
+                area.scrollTop = area.scrollHeight;
+            } catch (e) {
+                console.error('Load server logs failed:', e);
+            }
         }
 
         function clearLog() {
             document.getElementById('logArea').innerHTML = '';
             document.getElementById('logArea').dataset.lastLog = '';
+            // 同步清空服务端当前实例的日志
+            const server = getCurrentServerName() || '__system__';
+            fetch(`/api/logs/${encodeURIComponent(server)}`, { method: 'DELETE' })
+                .catch(() => { /* 清空失败不影响前端 */ });
         }
 
         // ============================================================
