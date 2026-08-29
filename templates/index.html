@@ -332,6 +332,8 @@
             .toolbar .btn span { display: none; }
             .ftp-bar .btn { width: auto; flex: 1; justify-content: center; }
             .toolbar #btnSend span { display: inline; }
+            .upload-toolbar .btn span { display: none; }
+            .upload-toolbar #btnStartUpload span { display: inline; }
 
             /* 更紧凑的文件项 */
             .file-item { padding: 8px 10px; }
@@ -372,13 +374,13 @@
 
         <!-- 标签页 -->
         <div class="tabs">
-            <button class="tab active" data-tab="transfer" onclick="switchTab('transfer')"><i data-lucide="package"></i> <span data-i18n="tab_files">文件列表</span></button>
-            <button class="tab" data-tab="uploads" onclick="switchTab('uploads')"><i data-lucide="upload-cloud"></i> <span data-i18n="tab_uploads">上传列表</span><span class="tab-badge" id="uploadBadge" style="display:none;"></span></button>
+            <button class="tab" data-tab="transfer" onclick="switchTab('transfer')"><i data-lucide="package"></i> <span data-i18n="tab_files">文件列表</span></button>
+            <button class="tab active" data-tab="uploads" onclick="switchTab('uploads')"><i data-lucide="upload-cloud"></i> <span data-i18n="tab_uploads">上传列表</span><span class="tab-badge" id="uploadBadge" style="display:none;"></span></button>
             <button class="tab" data-tab="log" onclick="switchTab('log')"><i data-lucide="clipboard-list"></i> <span data-i18n="tab_log">日志</span></button>
         </div>
 
         <!-- 文件列表标签页 -->
-        <div class="tab-content active" id="tab-transfer">
+        <div class="tab-content" id="tab-transfer">
             <!-- 工具栏 -->
             <div class="toolbar">
                 <div class="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll()" data-i18n-title="select_all" title="全选/取消"></div>
@@ -393,7 +395,7 @@
                 </div>
                 <div class="spacer"></div>
                 <button class="btn btn-sm" onclick="rescanFiles()" data-i18n-title="btn_refresh_list" title="刷新文件列表"><i data-lucide="refresh-cw"></i> <span data-i18n="btn_refresh_list" style="font-size:0.75rem;">刷新</span></button>
-                <button class="btn btn-success" id="btnSend" onclick="startTransfer()" disabled><i data-lucide="upload"></i> <span data-i18n="btn_send">发送到 Switch</span></button>
+                <button class="btn btn-success" id="btnSend" onclick="addToUploadList()" disabled><i data-lucide="plus-circle"></i> <span data-i18n="btn_add_upload">添加上传</span></button>
             </div>
 
             <!-- 文件列表 -->
@@ -427,14 +429,15 @@
         </div>
 
         <!-- 上传列表标签页 -->
-        <div class="tab-content" id="tab-uploads">
+        <div class="tab-content active" id="tab-uploads">
             <div class="upload-toolbar">
                 <div class="checkbox" id="selectAllUploadsCheckbox" onclick="toggleSelectAllUploads()" data-i18n-title="select_all" title="全选/取消"></div>
-                <span class="upload-count" id="uploadCount"></span>
-                <div class="spacer"></div>
                 <button class="btn btn-sm btn-success" id="btnRetrySelected" onclick="retrySelectedUploadFiles()" disabled><i data-lucide="rotate-cw"></i> <span data-i18n="btn_retry_selected">重试选中</span></button>
                 <button class="btn btn-sm btn-danger" id="btnCancelSelected" onclick="cancelSelectedUploadFiles()" disabled><i data-lucide="x-circle"></i> <span data-i18n="btn_cancel_selected">取消选中</span></button>
+                <span class="upload-count" id="uploadCount"></span>
+                <div class="spacer"></div>
                 <button class="btn btn-sm" onclick="refreshTransfers()"><i data-lucide="refresh-cw"></i> <span data-i18n="btn_refresh_list" style="font-size:0.75rem;">刷新</span></button>
+                <button class="btn btn-success" id="btnStartUpload" onclick="startAllUploads()" disabled><i data-lucide="play"></i> <span data-i18n="btn_start_upload">开始上传</span></button>
             </div>
             <div id="transferList">
                 <div class="empty-state">
@@ -582,7 +585,7 @@
                 btn_refresh_list: "刷新",
                 btn_help: "帮助",
                 btn_lang: "切换语言",
-                notice_info: "选择 FTP 服务器后，勾选要发送的文件，点击「发送到 Switch」即可。上传路径为空时发送到 FTP 根目录。",
+                notice_info: "选择 FTP 服务器后，勾选文件点击「添加上传」加入上传列表，再切换到上传列表点击「开始上传」即可。上传路径为空时发送到 FTP 根目录。",
                 tab_files: "文件列表",
                 tab_uploads: "上传列表",
                 tab_log: "日志",
@@ -592,10 +595,13 @@
                 btn_delete_transfer: "删除",
                 btn_retry_selected: "重试选中",
                 upload_status_pending: "等待中",
+                upload_status_starting: "排队中",
+                upload_status_transferring: "传输中",
                 upload_status_uploading: "上传中",
                 upload_status_completed: "已完成",
                 upload_status_failed: "失败",
                 upload_status_cancelled: "已取消",
+                upload_status_error: "错误",
                 transfer_files: "{c}/{t} 文件",
                 msg_cancel_all_files: "确定取消此任务的所有待上传文件吗？",
                 msg_cancel_selected_files: "确定取消选中的文件吗？",
@@ -605,7 +611,8 @@
                 log_retry_failed: "重试失败: ",
                 log_transfer_started: "传输任务已创建，共 {n} 个文件",
                 select_all: "全选/取消",
-                btn_send: "发送到 Switch",
+                btn_add_upload: "添加上传",
+                btn_start_upload: "开始上传",
                 col_name: "文件名",
                 col_size: "大小",
                 col_type: "类型",
@@ -661,6 +668,8 @@
                 log_cancelling: "正在取消传输...",
                 log_cancel_failed: "取消请求失败: ",
                 log_start_transfer: "开始传输 {n} 个文件到 {s}...",
+                log_add_to_upload: "添加 {n} 个文件到 {s} 的上传列表...",
+                log_start_upload: "开始上传 {s} 的 {n} 个任务",
                 log_task_created: "任务已创建，共 {n} 个文件，总计 {sz}",
                 log_task_failed: "创建传输任务失败: ",
                 log_transfer_failed: "传输请求失败: ",
@@ -707,7 +716,7 @@
                 btn_refresh_list: "Refresh",
                 btn_help: "Help",
                 btn_lang: "Switch language",
-                notice_info: "Select an FTP server, check the files to send, then click \"Send to Switch\". Empty upload path = FTP root.",
+                notice_info: "Select an FTP server, check files and click \"Add to Upload\", then switch to the Uploads tab and click \"Start Upload\". Empty upload path = FTP root.",
                 tab_files: "Files",
                 tab_uploads: "Uploads",
                 tab_log: "Log",
@@ -717,10 +726,13 @@
                 btn_delete_transfer: "Delete",
                 btn_retry_selected: "Retry Selected",
                 upload_status_pending: "Pending",
+                upload_status_starting: "Queued",
+                upload_status_transferring: "Transferring",
                 upload_status_uploading: "Uploading",
                 upload_status_completed: "Completed",
                 upload_status_failed: "Failed",
                 upload_status_cancelled: "Cancelled",
+                upload_status_error: "Error",
                 transfer_files: "{c}/{t} files",
                 msg_cancel_all_files: "Cancel all pending files in this task?",
                 msg_cancel_selected_files: "Cancel selected files?",
@@ -730,7 +742,8 @@
                 log_retry_failed: "Retry failed: ",
                 log_transfer_started: "Transfer task created, {n} files",
                 select_all: "Select all / None",
-                btn_send: "Send to Switch",
+                btn_add_upload: "Add to Upload",
+                btn_start_upload: "Start Upload",
                 col_name: "Name",
                 col_size: "Size",
                 col_type: "Type",
@@ -786,6 +799,8 @@
                 log_cancelling: "Cancelling transfer...",
                 log_cancel_failed: "Cancel request failed: ",
                 log_start_transfer: "Starting transfer of {n} files to {s}...",
+                log_add_to_upload: "Added {n} files to {s} upload list...",
+                log_start_upload: "Starting {n} task(s) for {s}",
                 log_task_created: "Task created: {n} files, total {sz}",
                 log_task_failed: "Create transfer task failed: ",
                 log_transfer_failed: "Transfer request failed: ",
@@ -897,10 +912,10 @@
                 loadFiles(),
                 loadTransfers(),
             ]);
-            // 使用 loadTransfers 返回的数据检查活跃任务
+            // 使用 loadTransfers 返回的数据检查是否有待上传或进行中的任务
             const allTransfers = results[2].status === 'fulfilled' ? results[2].value : [];
             const hasActive = (allTransfers || []).some(t =>
-                ['starting', 'transferring'].includes(t.status)
+                ['pending', 'starting', 'transferring'].includes(t.status)
             );
             if (hasActive) {
                 startTransferPolling();
@@ -1003,10 +1018,10 @@
             if (_serverChangeTimer) clearTimeout(_serverChangeTimer);
             _serverChangeTimer = setTimeout(async () => {
                 _serverChangeTimer = null;
-                // 刷新上传列表（按当前实例隔离显示），并使用返回数据检查活跃任务
+                // 刷新上传列表（按当前实例隔离显示），并使用返回数据检查待上传或进行中任务
                 const all = await loadTransfers();
                 const hasActive = (all || []).some(t =>
-                    ['starting', 'transferring'].includes(t.status)
+                    ['pending', 'starting', 'transferring'].includes(t.status)
                 );
                 if (hasActive) {
                     startTransferPolling();
@@ -1331,7 +1346,7 @@
         // ============================================================
         // 传输
         // ============================================================
-        async function startTransfer() {
+        async function addToUploadList() {
             const server = document.getElementById('ftpSelect').value;
             if (!server) { alert(t('msg_select_server')); return; }
             if (selectedFiles.size === 0) { alert(t('msg_select_files')); return; }
@@ -1342,7 +1357,7 @@
 
             document.getElementById('btnSend').disabled = true;
 
-            log(t('log_start_transfer', { n: files.length, s: server }), 'info');
+            log(t('log_add_to_upload', { n: files.length, s: server }), 'info');
 
             try {
                 const res = await fetch('/api/transfer', {
@@ -1352,7 +1367,7 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    log(t('log_transfer_started', { n: data.total_files }), 'success');
+                    log(t('log_task_created', { n: data.total_files, sz: formatSize(data.total_bytes) }), 'success');
                     if (data.skipped) {
                         log(currentLang === 'zh'
                             ? `已自动忽略 ${data.skipped} 个已在上传列表中的文件`
@@ -1364,9 +1379,8 @@
                     updateSendButton();
                     // 切换到上传列表
                     switchTab('uploads');
-                    // 刷新上传列表
+                    // 刷新上传列表（不启动轮询，等待用户点击"开始上传"）
                     await loadTransfers();
-                    startTransferPolling();
                 } else {
                     log(t('log_task_failed') + (data.error || t('log_unknown_error')), 'error');
                     document.getElementById('btnSend').disabled = false;
@@ -1374,6 +1388,37 @@
             } catch (e) {
                 log(t('log_transfer_failed') + e.message, 'error');
                 document.getElementById('btnSend').disabled = false;
+            }
+        }
+
+        async function startAllUploads() {
+            const server = document.getElementById('ftpSelect').value;
+            if (!server) { alert(t('msg_select_server')); return; }
+
+            const btn = document.getElementById('btnStartUpload');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/transfers/start-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ server })
+                });
+                const data = await res.json();
+                if (res.ok && data.started > 0) {
+                    log(t('log_start_upload', { n: data.started, s: server }), 'info');
+                    await loadTransfers();
+                    startTransferPolling();
+                } else if (res.ok) {
+                    log(currentLang === 'zh' ? '没有待上传的任务' : 'No pending tasks to start', 'warning');
+                    btn.disabled = false;
+                } else {
+                    log(t('log_task_failed') + (data.error || t('log_unknown_error')), 'error');
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                log(t('log_transfer_failed') + e.message, 'error');
+                btn.disabled = false;
             }
         }
 
@@ -1517,8 +1562,8 @@
                     }
                 });
 
-                // 如果没有任何活跃任务（所有服务器），停止轮询
-                const activeStatuses = ['starting', 'transferring'];
+                // 如果没有待上传或进行中的任务（所有服务器），停止轮询
+                const activeStatuses = ['pending', 'starting', 'transferring'];
                 const hasActive = all.some(t => activeStatuses.includes(t.status));
                 if (!hasActive) {
                     stopTransferPolling();
@@ -1560,14 +1605,23 @@
                 list.innerHTML = `<div class="empty-state"><i data-lucide="upload-cloud"></i><p>${t('no_transfers')}</p></div>`;
                 safeCreateIcons();
                 document.getElementById('uploadCount').textContent = '';
+                document.getElementById('btnStartUpload').disabled = true;
                 document.getElementById('btnCancelSelected').disabled = true;
                 document.getElementById('btnRetrySelected').disabled = true;
                 document.getElementById('selectAllUploadsCheckbox').classList.remove('checked');
                 return;
             }
 
+            // 统计：pending 任务数 + active 任务数
+            const pendingCount = transfers.filter(t => t.status === 'pending').length;
             const activeCount = transfers.filter(t => ['starting', 'transferring'].includes(t.status)).length;
-            document.getElementById('uploadCount').textContent = `${activeCount} ${currentLang === 'zh' ? '个进行中' : 'active'}`;
+            const countParts = [];
+            if (pendingCount > 0) countParts.push(`${pendingCount} ${currentLang === 'zh' ? '待上传' : 'pending'}`);
+            if (activeCount > 0) countParts.push(`${activeCount} ${currentLang === 'zh' ? '进行中' : 'active'}`);
+            document.getElementById('uploadCount').textContent = countParts.join(' · ');
+
+            // "开始上传"按钮：有 pending 任务时启用
+            document.getElementById('btnStartUpload').disabled = pendingCount === 0;
 
             list.innerHTML = '';
             visibleTransfers.forEach(tr => {
