@@ -2,7 +2,7 @@
 
 参照 [ns-web-dbibackend](https://github.com/FallingMY/ns-web-dbibackend) 的页面 UI，用 Python 实现的 Switch DBI FTP 传输服务。
 
-![Build and Release](https://github.com/FallingMY/ns-web-dbibackend/actions/workflows/build.yml/badge.svg)
+<br />
 
 自动扫描目录下的 Switch 安装包（NSP / NSZ / XCI / XCZ），通过列表展示，支持多文件勾选后一键 FTP 发送到 Switch 上的 DBI 后端。
 
@@ -108,7 +108,7 @@ vim config.yml
 python3 app.py
 ```
 
-浏览器访问 http://localhost:8090
+浏览器访问 <http://localhost:8090>
 
 ### 方式二：Docker Compose 部署
 
@@ -195,53 +195,53 @@ ui_settings:
 
 ### 页面与配置
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/` | 主页面 |
-| GET | `/api/config` | 获取完整配置 |
-| GET | `/api/ui-settings` | 获取 UI 设置（分页大小、显示所有文件、语言） |
-| POST | `/api/ui-settings` | 保存 UI 设置 |
+| 方法   | 路径                 | 说明                       |
+| ---- | ------------------ | ------------------------ |
+| GET  | `/`                | 主页面                      |
+| GET  | `/api/config`      | 获取完整配置                   |
+| GET  | `/api/ui-settings` | 获取 UI 设置（分页大小、显示所有文件、语言） |
+| POST | `/api/ui-settings` | 保存 UI 设置                 |
 
 ### 文件扫描
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/api/files` | 获取扫描到的文件列表（?all=true 显示所有文件） |
-| POST | `/api/files/scan` | 重新扫描目录（后台单任务，进行中返回提示） |
-| GET | `/api/files/scan-status` | 查询扫描状态 |
-| GET | `/api/scan-dirs` | 获取扫描目录列表 |
-| POST | `/api/scan-dirs` | 添加扫描目录 |
-| DELETE | `/api/scan-dirs?path=<path>` | 删除扫描目录 |
+| 方法     | 路径                           | 说明                           |
+| ------ | ---------------------------- | ---------------------------- |
+| GET    | `/api/files`                 | 获取扫描到的文件列表（?all=true 显示所有文件） |
+| POST   | `/api/files/scan`            | 重新扫描目录（后台单任务，进行中返回提示）        |
+| GET    | `/api/files/scan-status`     | 查询扫描状态                       |
+| GET    | `/api/scan-dirs`             | 获取扫描目录列表                     |
+| POST   | `/api/scan-dirs`             | 添加扫描目录                       |
+| DELETE | `/api/scan-dirs?path=<path>` | 删除扫描目录                       |
 
 ### FTP 服务器
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/api/servers` | 获取 FTP 服务器列表 |
-| POST | `/api/servers` | 添加 FTP 服务器 |
-| DELETE | `/api/servers/<name>` | 删除 FTP 服务器 |
-| POST | `/api/servers/<name>/test` | 触发 FTP 连接测试（异步） |
-| GET | `/api/servers/<name>/status` | 查询 FTP 连接状态 |
+| 方法     | 路径                           | 说明              |
+| ------ | ---------------------------- | --------------- |
+| GET    | `/api/servers`               | 获取 FTP 服务器列表    |
+| POST   | `/api/servers`               | 添加 FTP 服务器      |
+| DELETE | `/api/servers/<name>`        | 删除 FTP 服务器      |
+| POST   | `/api/servers/<name>/test`   | 触发 FTP 连接测试（异步） |
+| GET    | `/api/servers/<name>/status` | 查询 FTP 连接状态     |
 
 ### 传输任务
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/api/transfer` | 创建传输任务（body: {server, files}，返回 total_files/total_bytes/skipped） |
-| GET | `/api/transfers` | 获取所有传输任务列表（含每个文件状态） |
-| POST | `/api/transfers/start-all` | 启动指定实例的所有待上传任务（body: {server}） |
-| POST | `/api/transfer/<id>/cancel` | 取消整个传输任务 |
-| POST | `/api/transfer/<id>/cancel-files` | 取消指定文件（body: {file_indices: [0,2]}） |
-| POST | `/api/transfer/<id>/retry-files` | 重试失败的文件（body: {file_indices: [0,2]}） |
-| DELETE | `/api/transfer/<id>` | 删除传输任务 |
+| 方法     | 路径                                | 说明                                                                 |
+| ------ | --------------------------------- | ------------------------------------------------------------------ |
+| POST   | `/api/transfer`                   | 创建传输任务（body: {server, files}，返回 total\_files/total\_bytes/skipped） |
+| GET    | `/api/transfers`                  | 获取所有传输任务列表（含每个文件状态）                                                |
+| POST   | `/api/transfers/start-all`        | 启动指定实例的所有待上传任务（body: {server}）                                     |
+| POST   | `/api/transfer/<id>/cancel`       | 取消整个传输任务                                                           |
+| POST   | `/api/transfer/<id>/cancel-files` | 取消指定文件（body: {file\_indices: \[0,2]}）                              |
+| POST   | `/api/transfer/<id>/retry-files`  | 重试失败的文件（body: {file\_indices: \[0,2]}）                             |
+| DELETE | `/api/transfer/<id>`              | 删除传输任务                                                             |
 
 ### 操作日志
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/api/logs/<server>` | 添加一条操作日志（body: {msg, level}） |
-| GET | `/api/logs/<server>` | 获取该实例 24 小时内的操作日志 |
-| DELETE | `/api/logs/<server>` | 清空该实例的操作日志 |
+| 方法     | 路径                   | 说明                           |
+| ------ | -------------------- | ---------------------------- |
+| POST   | `/api/logs/<server>` | 添加一条操作日志（body: {msg, level}） |
+| GET    | `/api/logs/<server>` | 获取该实例 24 小时内的操作日志            |
+| DELETE | `/api/logs/<server>` | 清空该实例的操作日志                   |
 
 ## 使用前提
 
@@ -282,7 +282,7 @@ ns-webftp-dbi/
 ### 触发条件
 
 - **推送 main/master 分支**：构建镜像，上传为 Actions Artifact
-- **推送 tag（v*）**：构建镜像 + 创建 GitHub Release，附带镜像文件下载
+- \**推送 tag（v*）\*\*：构建镜像 + 创建 GitHub Release，附带镜像文件下载
 - **手动触发**：GitHub 仓库 → Actions → Build and Release → Run workflow
 
 ### 构建流程
@@ -308,20 +308,7 @@ docker run -d --name ns-webftp-dbi \
   ns-webftp-dbi:1.0.1
 ```
 
-### 发布新版本
-
-```bash
-# 1. 修改 version.txt 中的版本号
-echo "1.2.0" > version.txt
-
-# 2. 提交并打 tag
-git add version.txt
-git commit -m "chore: bump version to 1.2.0"
-git tag v1.2.0
-git push origin v1.2.0
-```
-
-推送 tag 后 GitHub Actions 会自动构建并创建 Release。
+<br />
 
 ## 技术栈
 
