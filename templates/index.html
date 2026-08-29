@@ -1035,6 +1035,40 @@
             }, 300);
         }
 
+        // 任务完成后延迟重测连接：DBI 传输完可能自动退出后端模式，需刷新状态图标
+        let _connRecheckTimers = {};  // server -> timer，防止重复调度
+        function _scheduleConnRecheck(server) {
+            if (!server) return;
+            // 只对当前实例重测（用户切换实例后不需要重测旧实例）
+            if (getCurrentServerName() !== server) return;
+            // 已有调度则跳过
+            if (_connRecheckTimers[server]) return;
+            _connRecheckTimers[server] = setTimeout(async () => {
+                delete _connRecheckTimers[server];
+                // 再次确认仍是当前实例
+                if (getCurrentServerName() !== server) return;
+                try {
+                    await fetch(`/api/servers/${encodeURIComponent(server)}/test`, { method: 'POST' });
+                    // 延迟读取结果
+                    setTimeout(async () => {
+                        try {
+                            const res = await fetch(`/api/servers/${encodeURIComponent(server)}/status`);
+                            const data = await res.json();
+                            if (data.status !== 'checking') {
+                                currentServerStatus[server] = data;
+                                updateFtpStatus(data.status, data.message);
+                                // 重测连接成功后同步启动 FTP 保活
+                                if (data.status === 'connected') {
+                                    fetch(`/api/keepalive/${encodeURIComponent(server)}`, { method: 'POST' })
+                                        .catch(() => { /* 静默失败 */ });
+                                }
+                            }
+                        } catch (e) { /* ignore */ }
+                    }, 2000);
+                } catch (e) { /* ignore */ }
+            }, 5000);  // 延迟 5 秒，给 DBI 完成安装/退出后端模式的时间
+        }
+
         async function checkFtpStatus() {
             const sel = document.getElementById('ftpSelect');
             const name = sel.value;
@@ -1058,6 +1092,11 @@
                         updateFtpStatus(data.status, data.message);
                         log(`FTP [${name}]: ${data.message}`, data.status === 'connected' ? 'success' : 'error');
                         document.getElementById('btnCheckFtp').disabled = false;
+                        // 测试连接成功后自动启动 FTP 保活，防止 DBI 在无活动客户端时退出后端模式
+                        if (data.status === 'connected') {
+                            fetch(`/api/keepalive/${encodeURIComponent(name)}`, { method: 'POST' })
+                                .catch(() => { /* 静默失败，不影响主流程 */ });
+                        }
                     } else {
                         setTimeout(() => pollStatus(retries + 1), 1000);
                     }
@@ -1525,6 +1564,10 @@
                     if (prevTask && prevTask !== tr.status) {
                         if (tr.status === 'completed') {
                             log(t('log_task_complete') + ` [${tr.server}]`, 'success');
+                            // 传输完成后 DBI 可能自动退出后端模式，延迟重测连接状态
+                            _scheduleConnRecheck(tr.server);
+                        } else if (tr.status === 'error') {
+                            _scheduleConnRecheck(tr.server);
                         }
                     }
                     _prevTaskStatuses[taskKey] = tr.status;

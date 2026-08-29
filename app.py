@@ -57,6 +57,132 @@ def _get_server_lock(server_name):
         return _server_locks[server_name]
 
 
+# FTP 保活连接：每个实例独立后台保活，周期性发送 NOOP
+# 防止 DBI 在无活动客户端时退出 FTP 后端模式
+_keepalive_stops = {}        # server_name -> threading.Event
+_keepalive_threads = {}      # server_name -> threading.Thread
+_keepalive_guard = threading.Lock()
+KEEPALIVE_INTERVAL = 30      # NOOP 发送间隔（秒）
+KEEPALIVE_MAX_LIFETIME = None  # None = 持续保活（不自动停止）；设为秒数则到期自动停止
+KEEPALIVE_RETRY_BACKOFF = [10, 20, 40, 60]  # 连接失败重试间隔（秒），最后一次后保持
+
+
+def _get_server_info(server_name):
+    """从配置中获取服务器信息"""
+    try:
+        cfg = ConfigManager.load()
+        for s in cfg.get("ftp_servers", []):
+            if s.get("name") == server_name:
+                return dict(s)
+    except Exception:
+        pass
+    return None
+
+
+def start_keepalive(server_name):
+    """对指定实例启动 FTP 保活连接（传输完成后调用）。
+
+    保活线程建立独立 FTP 连接，周期性发送 NOOP 维持连接，
+    让 DBI 知道有活动客户端，避免无活动连接时退出 FTP 后端模式。
+    传输开始前会调用 stop_keepalive 停止保活。
+    """
+    server_info = _get_server_info(server_name)
+    if not server_info:
+        return
+
+    with _keepalive_guard:
+        # 已有保活在运行则不重复启动
+        if server_name in _keepalive_threads and _keepalive_threads[server_name].is_alive():
+            return
+        # 清理旧停止事件
+        stop_event = threading.Event()
+        _keepalive_stops[server_name] = stop_event
+
+        def _keepalive_loop():
+            from ftplib import FTP, error_temp, error_perm
+            start_ts = time.time()
+            ftp = None
+            consecutive_fail = 0
+            while not stop_event.is_set():
+                # 若配置了最长保活时间，到期自动停止
+                if KEEPALIVE_MAX_LIFETIME is not None and time.time() - start_ts > KEEPALIVE_MAX_LIFETIME:
+                    break
+                # 建立或重建连接
+                if ftp is None:
+                    try:
+                        ftp = FTP()
+                        ftp.connect(server_info["host"], int(server_info["port"]), timeout=10)
+                        ftp.login(server_info.get("username") or "anonymous",
+                                  server_info.get("password") or "")
+                        if ftp.sock:
+                            ftp.sock.settimeout(None)
+                            ftp.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                        consecutive_fail = 0
+                    except Exception:
+                        ftp = None
+                        consecutive_fail += 1
+                        # 指数退避重试：10s → 20s → 40s → 60s（上限）
+                        # 不再因为连续失败而退出，持续重试直到 DBI 上线或收到停止信号
+                        idx = min(consecutive_fail - 1, len(KEEPALIVE_RETRY_BACKOFF) - 1)
+                        wait_sec = KEEPALIVE_RETRY_BACKOFF[idx]
+                        stop_event.wait(wait_sec)
+                        continue
+                # 发送 NOOP 维持连接
+                try:
+                    ftp.voidcmd("NOOP")
+                    consecutive_fail = 0
+                except Exception:
+                    # 连接已断开，下次循环重建
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
+                    ftp = None
+                    consecutive_fail += 1
+                # 等待下一次 NOOP，期间可被停止信号唤醒
+                stop_event.wait(KEEPALIVE_INTERVAL)
+            # 清理：关闭连接
+            if ftp is not None:
+                try:
+                    ftp.close()
+                except Exception:
+                    pass
+            with _keepalive_guard:
+                _keepalive_threads.pop(server_name, None)
+                _keepalive_stops.pop(server_name, None)
+
+        t = threading.Thread(target=_keepalive_loop, name=f"ftp-keepalive-{server_name}", daemon=True)
+        _keepalive_threads[server_name] = t
+        t.start()
+
+
+def stop_keepalive(server_name):
+    """停止指定实例的 FTP 保活连接（传输开始前调用）"""
+    with _keepalive_guard:
+        stop_event = _keepalive_stops.get(server_name)
+        if stop_event:
+            stop_event.set()
+
+
+def start_all_keepalive():
+    """为配置中的所有 FTP 服务器逐一启动保活连接（服务启动时调用）。
+
+    每个实例独立后台保活，互不影响：
+    - DBI 已在线 → 维持连接，每 30 秒 NOOP
+    - DBI 离线 → 指数退避重试（10s→60s），直到 DBI 上线
+    - 传输开始前该实例保活停止，传输完成后自动重启
+    """
+    try:
+        cfg = ConfigManager.load()
+        servers = cfg.get("ftp_servers", [])
+    except Exception:
+        return
+    for s in servers:
+        name = s.get("name")
+        if name:
+            start_keepalive(name)
+
+
 # 操作日志：按实例名分组存储，每条 {ts, msg, level}
 _server_logs = {}
 _server_logs_lock = threading.Lock()
@@ -261,16 +387,28 @@ class FTPManager:
             ftp = FTP()
             ftp.connect(host, int(port), timeout=10)
             ftp.login(username or "anonymous", password or "")
-            ftp.quit()
+            # 不发送 FTP QUIT 命令，直接关闭 socket：
+            # 某些 DBI 版本收到 QUIT 后会退出 FTP 后端模式，导致服务下线
+            ftp.close()
             return True, "连接成功"
         except error_perm:
             return False, "认证失败：用户名或密码错误"
         except error_temp:
             return False, "临时错误，请重试"
         except TimeoutError:
-            return False, "连接超时"
+            return False, "连接超时，DBI 可能正在安装或已退出后端模式"
         except ConnectionRefusedError:
-            return False, "连接被拒绝，检查地址和端口"
+            return False, "连接被拒绝，DBI 可能已退出后端模式，请在 Switch 上重新打开 DBI → 后端模式"
+        except (ConnectionResetError, BrokenPipeError):
+            return False, "连接被重置，DBI 可能正在处理中或已退出后端模式"
+        except OSError as e:
+            # 处理 errno 54 (Connection reset)、errno 61 (Connection refused on macOS) 等
+            if getattr(e, 'errno', None) in (54, 61, 111):
+                return False, "连接被拒绝，DBI 可能已退出后端模式，请在 Switch 上重新打开 DBI → 后端模式"
+            msg = str(e)
+            if len(msg) > 80:
+                msg = msg[:80] + "..."
+            return False, msg
         except Exception as e:
             msg = str(e)
             if len(msg) > 80:
@@ -297,6 +435,8 @@ class FTPManager:
         server_lock = _get_server_lock(server_name)
         server_lock.acquire()
         try:
+            # 传输开始前停止保活连接，释放 FTP 连接资源
+            stop_keepalive(server_name)
             # 获取锁后再次检查任务是否已被取消
             if task.get("cancelled"):
                 task["status"] = "cancelled"
@@ -522,7 +662,9 @@ class FTPManager:
                     task["status"] = "completed"
                     log("传输结束", "success")
                 try:
-                    ftp.quit()
+                    # 不发送 FTP QUIT 命令，直接关闭 socket：
+                    # 避免触发 DBI 收到 QUIT 后退出 FTP 后端模式
+                    ftp.close()
                 except Exception:
                     pass
             except Exception as e:
@@ -548,6 +690,10 @@ class FTPManager:
                         task["avg_speed"] = task["uploaded_bytes"] / elapsed
         finally:
             server_lock.release()
+            # 传输完成后启动保活连接，维持 DBI FTP 后端模式在线
+            # 仅在任务正常完成（非取消、非异常退出）时启动
+            if task.get("status") == "completed":
+                start_keepalive(server_name)
 
 
 def _format_size(num_bytes):
@@ -766,6 +912,8 @@ def add_server():
     }
     servers.append(new_server)
     ConfigManager.save(cfg)
+    # 新增实例时同步启动该实例的保活连接
+    start_keepalive(new_server["name"])
     return jsonify({"ok": True, "server": new_server})
 
 
@@ -783,6 +931,11 @@ def delete_server(name):
         _ftp_status.pop(name, None)
     with _server_locks_guard:
         _server_locks.pop(name, None)
+    # 停止并清理该实例的保活连接
+    stop_keepalive(name)
+    with _keepalive_guard:
+        _keepalive_threads.pop(name, None)
+        _keepalive_stops.pop(name, None)
     return jsonify({"ok": True})
 
 
@@ -1170,6 +1323,39 @@ def clear_server_log(server):
     return jsonify({"ok": True})
 
 
+# ============================================================
+# FTP 保活连接 API
+# ============================================================
+
+@app.route("/api/keepalive/<server>", methods=["GET"])
+def keepalive_status(server):
+    """查询指定实例的 FTP 保活连接状态"""
+    with _keepalive_guard:
+        thread = _keepalive_threads.get(server)
+        is_alive = bool(thread and thread.is_alive())
+    return jsonify({"server": server, "keepalive": is_alive})
+
+
+@app.route("/api/keepalive/<server>", methods=["POST"])
+def keepalive_start(server):
+    """手动启动指定实例的 FTP 保活连接
+
+    前端在"测试连接"成功后可调用此 API 启动保活，
+    避免传输完成后 DBI 在无活动客户端时退出 FTP 后端模式。
+    """
+    if not _get_server_info(server):
+        return jsonify({"ok": False, "error": "实例不存在"}), 404
+    start_keepalive(server)
+    return jsonify({"ok": True, "server": server})
+
+
+@app.route("/api/keepalive/<server>", methods=["DELETE"])
+def keepalive_stop(server):
+    """手动停止指定实例的 FTP 保活连接"""
+    stop_keepalive(server)
+    return jsonify({"ok": True, "server": server})
+
+
 if __name__ == "__main__":
     cfg = ConfigManager.load()
     host = os.environ.get("HOST", cfg.get("server", {}).get("host", "0.0.0.0"))
@@ -1181,6 +1367,11 @@ if __name__ == "__main__":
     scan_interval = int(cfg.get("scan_interval", 300))
     scan_mgr.start_auto_scan(scan_interval)
     print(f"后台扫描已启动: 每 {scan_interval} 秒刷新一次")
+
+    # 为配置中的所有 FTP 服务器启动独立后台保活
+    # 每个实例独立保活线程，DBI 离线时持续指数退避重试，上线后维持 NOOP 连接
+    start_all_keepalive()
+    print(f"FTP 保活已启动: {[s['name'] for s in cfg.get('ftp_servers', [])]}")
 
     print(f"Switch DBI FTP 传输工具启动中...")
     print(f"访问地址: http://localhost:{port}")
