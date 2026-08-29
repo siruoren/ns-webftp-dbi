@@ -885,7 +885,7 @@ def start_transfer():
     task_id = str(uuid.uuid4())[:8]
     task = {
         "id": task_id,
-        "status": "starting",
+        "status": "pending",  # pending: 已添加到上传列表但未开始上传
         "total_files": len(file_list),
         "total_bytes": sum(f["size"] for f in file_list),
         "uploaded_bytes": 0,
@@ -900,6 +900,7 @@ def start_transfer():
         "start_time": None,
         "end_time": None,
         "avg_speed": 0,
+        "server_info": server_info,  # 保存服务器配置，启动上传时直接使用
         "files": [
             {
                 "name": f["name"],
@@ -916,19 +917,45 @@ def start_transfer():
     with _transfer_lock:
         _transfer_tasks[task_id] = task
 
-    # 启动后台传输线程
-    thread = threading.Thread(
-        target=FTPManager.upload_files,
-        args=(task_id, server_info),
-        daemon=True,
-    )
-    thread.start()
-
+    # 不立即启动上传线程，等待用户点击"开始上传"
     result = {"task_id": task_id, "total_files": len(file_list),
               "total_bytes": task["total_bytes"]}
     if skipped:
         result["skipped"] = len(skipped)
     return jsonify(result)
+
+
+@app.route("/api/transfers/start-all", methods=["POST"])
+def start_all_pending_transfers():
+    """启动指定实例的所有 pending 状态任务的上传线程"""
+    data = request.json or {}
+    server_name = data.get("server")
+    if not server_name:
+        return jsonify({"error": "缺少服务器名称"}), 400
+
+    started = []
+    with _transfer_lock:
+        for tid, task in _transfer_tasks.items():
+            if task.get("server") != server_name:
+                continue
+            if task.get("status") != "pending":
+                continue
+            server_info = task.get("server_info")
+            if not server_info:
+                continue
+            task["status"] = "starting"
+            started.append((tid, server_info))
+
+    # 在锁外启动线程，减少锁持有时间
+    for tid, sinfo in started:
+        thread = threading.Thread(
+            target=FTPManager.upload_files,
+            args=(tid, sinfo),
+            daemon=True,
+        )
+        thread.start()
+
+    return jsonify({"ok": True, "started": len(started)})
 
 
 @app.route("/api/transfer/<task_id>/cancel", methods=["POST"])
@@ -953,9 +980,17 @@ def delete_transfer(task_id):
     return jsonify({"error": "任务不存在"}), 404
 
 
+_last_cleanup_ts = 0
+_CLEANUP_INTERVAL = 30  # 最少 30 秒间隔执行一次清理
+
+
 @app.route("/api/transfers")
 def list_transfers():
-    cleanup_old_tasks()
+    global _last_cleanup_ts
+    now = time.time()
+    if now - _last_cleanup_ts >= _CLEANUP_INTERVAL:
+        cleanup_old_tasks()
+        _last_cleanup_ts = now
     # 仅在锁内获取任务引用列表，序列化在锁外完成以减少锁持有时间
     with _transfer_lock:
         task_refs = list(_transfer_tasks.values())
@@ -975,10 +1010,11 @@ def list_transfers():
             "end_time": task.get("end_time"),
             "files": task.get("files", []),
         })
-    # Sort: active first, then by start_time descending
+    # Sort: active first, then pending, then terminal; within group by start_time desc
     active_statuses = {"starting", "transferring"}
+    pending_statuses = {"pending"}
     tasks.sort(key=lambda t: (
-        0 if t["status"] in active_statuses else 1,
+        0 if t["status"] in active_statuses else (1 if t["status"] in pending_statuses else 2),
         -(t.get("start_time") or 0)
     ))
     return jsonify({"transfers": tasks})
@@ -1028,15 +1064,17 @@ def retry_files(task_id):
     if reset_count == 0:
         return jsonify({"error": "没有可重试的失败文件"}), 400
 
-    # 获取服务器配置
-    cfg = ConfigManager.load()
-    server_info = None
-    for s in cfg.get("ftp_servers", []):
-        if s["name"] == task.get("server"):
-            server_info = s
-            break
+    # 获取服务器配置（优先使用任务保存的 server_info，不存在则从配置加载）
+    server_info = task.get("server_info")
+    if not server_info:
+        cfg = ConfigManager.load()
+        for s in cfg.get("ftp_servers", []):
+            if s["name"] == task.get("server"):
+                server_info = s
+                break
     if not server_info:
         return jsonify({"error": "服务器配置不存在"}), 400
+    task["server_info"] = server_info
 
     # 重置任务状态并启动新线程
     task["status"] = "starting"
