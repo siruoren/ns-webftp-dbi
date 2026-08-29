@@ -1,6 +1,6 @@
 # Switch DBI FTP 传输工具
 
-参照 [ns-web-dbibackend](https://github.com/FallingMY/ns-web-dbibackend) 的页面 UI，用 Python 实现的 Switch DBI FTP 传输服务。# ns-webftp-dbi
+参照 [ns-web-dbibackend](https://github.com/FallingMY/ns-web-dbibackend) 的页面 UI，用 Python 实现的 Switch DBI FTP 传输服务。
 
 ![Build and Release](https://github.com/FallingMY/ns-web-dbibackend/actions/workflows/build.yml/badge.svg)
 
@@ -38,34 +38,60 @@
 
 ## 功能特性
 
+### 文件扫描
+
 - **自动扫描**：递归遍历配置目录，自动发现所有 Switch 安装包
 - **多格式支持**：NSP、NSZ、XCI、XCZ
 - **多文件勾选**：列表复选框，支持全选/半选
-- **串行上传**：文件逐一上传（并发=1），避免 Switch 端压力
-- **FTP 传输**：通过 FTP 协议发送到 Switch DBI 后端，自动覆盖同名文件、自动创建目录
-- **多服务器管理**：YML 配置 + 页面手动添加，支持多个 Switch 地址切换
-- **连接状态图标**：实时显示 FTP 连接状态（绿色=已连接、红色=失败、灰色=未检测）
-- **传输进度**：整体进度百分比 + 单文件进度 + 实时速率 + ETA
-- **上传列表**：独立标签页，每个文件独立显示状态和进度百分比
-  - **实例隔离**：上传列表按 FTP 服务器实例隔离，切换服务器只显示当前实例的任务，互不影响
-  - **自动去重**：已在上传列表中的文件（等待/上传中/失败）再次上传时自动忽略
-  - **自动移除**：上传完成的文件条目自动从列表中移除
-  - **失败重试**：勾选失败文件后一键重试，支持批量选择
-  - **取消选中**：勾选等待/上传中/失败的文件后一键取消，条目立即移除
-  - **一键全选**：上传列表工具栏全选/取消全选按钮
-  - **断点续传**：页面刷新不中断正在进行的上传任务，自动恢复进度显示
-  - **容错续传**：单个文件失败后自动重连 FTP，继续后续文件上传
-- **大文件支持**：1MB 数据块 + TCP KeepAlive + 300 秒超时保护，支持 GB 级文件长时间传输
-- **超时保护**：连接超时 + 传输读写超时 + NOOP 心跳保活
-- **中英双语**：右上角一键切换 ZH/EN 全界面语言（含排查指南）
-- **Docker 部署**：支持 docker-compose 一键部署
-- **响应式布局**：自适应桌面和手机浏览器，文件列表横向滚动不错位
 - **关键词搜索**：文件列表实时搜索文件名和目录路径（不区分大小写）
 - **目录分组排序**：文件按所在目录的修改时间排序，同一目录的文件连续排列并显示目录分组标题
 - **分页显示**：每页 10/15/20 条可选，支持翻页
 - **多扫描目录**：页面管理多个扫描路径，支持添加/删除
+- **定时刷新**：后台定时扫描文件列表（间隔可配），刷新按钮触发后台任务，同一时间只允许一个刷新
+
+### FTP 传输
+
+- **串行上传**：文件逐一上传（并发=1），避免 Switch 端压力
+- **FTP 传输**：通过 FTP 协议发送到 Switch DBI 后端，自动覆盖同名文件、自动创建目录
+- **大文件支持**：1MB 数据块 + TCP KeepAlive + 300 秒超时保护，支持 GB 级文件长时间传输
+- **超时保护**：连接超时 + 传输读写超时 + NOOP 心跳保活
+- **断点续传**：页面刷新不中断正在进行的上传任务，自动恢复进度显示
+- **容错续传**：单个文件失败后自动重连 FTP，继续后续文件上传
+
+### 上传列表
+
+- **独立标签页**：每个文件独立显示状态和进度百分比
+- **默认显示**：页面刷新后默认展示上传列表标签页
+- **实例隔离**：上传列表按 FTP 服务器实例隔离，切换服务器只显示当前实例的任务，互不影响
+- **自动刷新**：切换实例、切换标签页、添加文件时自动刷新上传列表，始终显示当前实例的最新状态
+- **条目统计**：工具栏显示当前列表中实际显示的文件条目数（仅 pending/uploading/failed 状态）
+- **标签角标**：上传列表标签右侧显示当前实例待处理条目数，随操作自动更新
+- **自动去重**：已在上传列表中的文件（等待/上传中/失败）再次上传时自动忽略，并提示实际添加数与过滤数
+- **自动移除**：上传完成的文件条目自动从列表中移除
+- **失败重试**：勾选失败文件后一键重试，支持批量选择
+- **取消选中**：勾选等待/上传中/失败的文件后一键取消，条目立即移除
+- **一键全选**：上传列表工具栏全选/取消全选按钮
+- **工具栏布局**：全选框右侧依次排列重试、取消按钮，开始上传按钮与添加上传样式一致
+
+### 操作日志
+
+- **服务端持久化**：操作日志保留在服务端，刷新页面或重启服务后可恢复
+- **按实例分组**：日志按 FTP 服务器实例 ID 单独存放，切换实例时只显示该实例的历史日志
+- **自动清理**：只保留 24 小时内的日志内容，超过自动删除
+- **实时上报**：前端操作产生的日志异步上报到服务端，不影响界面响应
+
+### 多服务器管理
+
+- **YML 配置 + 页面添加**：支持配置文件预设和页面手动添加，支持多个 Switch 地址切换
+- **连接状态图标**：实时显示 FTP 连接状态（绿色=已连接、红色=失败、灰色=未检测）
+- **异步测试**：点击「测试连接」触发后台异步检测，不阻塞界面
+
+### 界面
+
+- **中英双语**：右上角一键切换 ZH/EN 全界面语言（含排查指南）
+- **响应式布局**：自适应桌面和手机浏览器，文件列表横向滚动不错位
 - **配置持久化**：UI 设置（分页大小、显示所有文件、语言）自动保存到 config.yml
-- **定时刷新**：后台定时扫描文件列表，刷新按钮触发后台任务，同一时间只允许一个刷新
+- **Docker 部署**：支持 docker-compose 一键部署
 
 ## 快速开始
 
@@ -126,6 +152,9 @@ scan_dirs:
   - /path/to/switch/games    # 本地运行
   # - /games                  # Docker 运行
 
+# 文件列表定时刷新间隔（秒）
+scan_interval: 300
+
 # Switch 安装包扩展名
 scan_extensions:
   - .nsp
@@ -144,46 +173,75 @@ ftp_servers:
 
 # UI 设置（页面上修改后自动保存）
 ui_settings:
-  page_size: 10                # 每页显示文件数（10/15/20）
+  page_size: 20                # 每页显示文件数（10/15/20）
   show_all_files: false        # 是否显示所有文件（含非安装包）
   language: zh                 # 界面语言（zh/en）
 ```
 
 ### 页面操作
 
-1. **选择 FTP 服务器**：下拉框切换已配置的 Switch 地址
+1. **选择 FTP 服务器**：下拉框切换已配置的 Switch 地址，切换后上传列表和操作日志自动切换为该实例的内容
 2. **测试连接**：点击「测试连接」查看 FTP 连接状态（图标变色）
 3. **添加服务器**：点击「添加」填写 FTP 地址、认证信息、上传路径
 4. **管理服务器**：点击「管理」查看/删除已配置的服务器
 5. **勾选文件**：在文件列表中勾选要发送的安装包
-6. **发送到 Switch**：点击「发送到 Switch」开始 FTP 传输
-7. **查看进度**：进度条显示传输百分比、速率、剩余时间
-8. **查看日志**：切换到「日志」标签页查看详细传输日志
+6. **发送到上传列表**：点击「发送到 Switch」将勾选文件添加到上传列表（已存在的自动忽略并提示过滤数），不自动跳转页面
+7. **开始上传**：切换到上传列表标签页，点击「开始上传」启动 FTP 传输
+8. **查看进度**：进度条显示传输百分比、速率、剩余时间，每个文件独立显示状态
+9. **失败重试/取消**：勾选上传列表中的文件后点击「重试选中」或「取消选中」
+10. **查看日志**：切换到「日志」标签页查看当前实例的操作日志（服务端持久化，保留 24 小时）
 
 ## API 接口
+
+### 页面与配置
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/` | 主页面 |
+| GET | `/api/config` | 获取完整配置 |
+| GET | `/api/ui-settings` | 获取 UI 设置（分页大小、显示所有文件、语言） |
+| POST | `/api/ui-settings` | 保存 UI 设置 |
+
+### 文件扫描
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
 | GET | `/api/files` | 获取扫描到的文件列表（?all=true 显示所有文件） |
 | POST | `/api/files/scan` | 重新扫描目录（后台单任务，进行中返回提示） |
 | GET | `/api/files/scan-status` | 查询扫描状态 |
 | GET | `/api/scan-dirs` | 获取扫描目录列表 |
 | POST | `/api/scan-dirs` | 添加扫描目录 |
 | DELETE | `/api/scan-dirs?path=<path>` | 删除扫描目录 |
-| GET | `/api/ui-settings` | 获取 UI 设置（分页大小、显示所有文件、语言） |
-| POST | `/api/ui-settings` | 保存 UI 设置 |
+
+### FTP 服务器
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
 | GET | `/api/servers` | 获取 FTP 服务器列表 |
 | POST | `/api/servers` | 添加 FTP 服务器 |
 | DELETE | `/api/servers/<name>` | 删除 FTP 服务器 |
-| GET | `/api/servers/<name>/status` | 测试 FTP 连接状态 |
-| POST | `/api/transfer` | 创建传输任务 |
-| GET | `/api/transfers` | 获取所有传输任务列表 |
-| GET | `/api/transfer/<id>/status` | 查询传输进度（含每个文件状态） |
+| POST | `/api/servers/<name>/test` | 触发 FTP 连接测试（异步） |
+| GET | `/api/servers/<name>/status` | 查询 FTP 连接状态 |
+
+### 传输任务
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/transfer` | 创建传输任务（body: {server, files}，返回 total_files/total_bytes/skipped） |
+| GET | `/api/transfers` | 获取所有传输任务列表（含每个文件状态） |
+| POST | `/api/transfers/start-all` | 启动指定实例的所有待上传任务（body: {server}） |
 | POST | `/api/transfer/<id>/cancel` | 取消整个传输任务 |
 | POST | `/api/transfer/<id>/cancel-files` | 取消指定文件（body: {file_indices: [0,2]}） |
 | POST | `/api/transfer/<id>/retry-files` | 重试失败的文件（body: {file_indices: [0,2]}） |
 | DELETE | `/api/transfer/<id>` | 删除传输任务 |
+
+### 操作日志
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/logs/<server>` | 添加一条操作日志（body: {msg, level}） |
+| GET | `/api/logs/<server>` | 获取该实例 24 小时内的操作日志 |
+| DELETE | `/api/logs/<server>` | 清空该实例的操作日志 |
 
 ## 使用前提
 
@@ -196,16 +254,17 @@ ui_settings:
 
 ```
 ns-webftp-dbi/
-├── app.py                # Flask 后端：文件扫描、FTP 传输、API
+├── app.py                # Flask 后端：文件扫描、FTP 传输、操作日志、API
 ├── config.yml            # 配置文件：扫描目录、FTP 服务器、UI 设置
 ├── version.txt           # 版本号（CI/CD 构建时读取）
 ├── requirements.txt      # Python 依赖
 ├── Dockerfile            # Docker 镜像构建
 ├── docker-compose.yml    # Docker 编排
+├── build_img.sh          # 本地构建镜像脚本
 ├── .github/workflows/
 │   └── build.yml         # GitHub Actions：自动构建镜像并发布
 ├── templates/
-│   └── index.html        # 前端页面：暗色主题 UI
+│   └── index.html        # 前端页面：暗色主题 UI（含中英双语）
 └── screenshots/              # 页面截图
     ├── main-zh.png           # 中文主界面
     ├── main-en.png           # 英文主界面
@@ -239,27 +298,27 @@ ns-webftp-dbi/
 
 ```bash
 # 从 Release 页面下载镜像文件
-docker load -i ns-webftp-dbi-1.0.0.tar.gz
+docker load -i ns-webftp-dbi-1.0.1.tar.gz
 
 # 运行容器
 docker run -d --name ns-webftp-dbi \
   -p 8090:8090 \
   -v ./games:/games \
   -v ./config.yml:/app/config.yml \
-  ns-webftp-dbi:1.0.0
+  ns-webftp-dbi:1.0.1
 ```
 
 ### 发布新版本
 
 ```bash
 # 1. 修改 version.txt 中的版本号
-echo "1.1.0" > version.txt
+echo "1.2.0" > version.txt
 
 # 2. 提交并打 tag
 git add version.txt
-git commit -m "chore: bump version to 1.1.0"
-git tag v1.1.0
-git push origin v1.1.0
+git commit -m "chore: bump version to 1.2.0"
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 推送 tag 后 GitHub Actions 会自动构建并创建 Release。
