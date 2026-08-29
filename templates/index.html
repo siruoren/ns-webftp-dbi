@@ -671,6 +671,7 @@
                 log_add_to_upload: "添加 {n} 个文件到 {s} 的上传列表...",
                 log_start_upload: "开始上传 {s} 的 {n} 个任务",
                 log_task_created: "任务已创建，共 {n} 个文件，总计 {sz}",
+                log_added_with_skip: "已添加 {added} 个文件（过滤掉 {skipped} 个已存在）",
                 log_task_failed: "创建传输任务失败: ",
                 log_transfer_failed: "传输请求失败: ",
                 log_unknown_error: "未知错误",
@@ -802,6 +803,7 @@
                 log_add_to_upload: "Added {n} files to {s} upload list...",
                 log_start_upload: "Starting {n} task(s) for {s}",
                 log_task_created: "Task created: {n} files, total {sz}",
+                log_added_with_skip: "Added {added} file(s) (skipped {skipped} existing)",
                 log_task_failed: "Create transfer task failed: ",
                 log_transfer_failed: "Transfer request failed: ",
                 log_unknown_error: "Unknown error",
@@ -1367,19 +1369,27 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    log(t('log_task_created', { n: data.total_files, sz: formatSize(data.total_bytes) }), 'success');
+                    // 部分或全部文件成功添加到上传列表（已存在文件后端自动过滤）
                     if (data.skipped) {
-                        log(currentLang === 'zh'
-                            ? `已自动忽略 ${data.skipped} 个已在上传列表中的文件`
-                            : `Skipped ${data.skipped} file(s) already in upload list`, 'warning');
+                        // 有文件被过滤：显示实际添加数 + 过滤提示
+                        log(t('log_added_with_skip', { added: data.total_files, skipped: data.skipped }), 'success');
+                    } else {
+                        // 无重复：显示任务创建详情（含大小）
+                        log(t('log_task_created', { n: data.total_files, sz: formatSize(data.total_bytes) }), 'success');
                     }
                     // 清空文件选中状态
                     selectedFiles.clear();
                     renderFileList();
                     updateSendButton();
-                    // 切换到上传列表
-                    switchTab('uploads');
-                    // 刷新上传列表（不启动轮询，等待用户点击"开始上传"）
+                    // 刷新上传列表，更新标签 badge 统计（不自动跳转页面）
+                    await loadTransfers();
+                } else if (data.skipped) {
+                    // 所有文件均已在上传列表中，全部被过滤
+                    log(t('log_added_with_skip', { added: 0, skipped: data.skipped }), 'success');
+                    selectedFiles.clear();
+                    renderFileList();
+                    updateSendButton();
+                    // 刷新上传列表，更新标签 badge 统计
                     await loadTransfers();
                 } else {
                     log(t('log_task_failed') + (data.error || t('log_unknown_error')), 'error');
@@ -1612,16 +1622,21 @@
                 return;
             }
 
-            // 统计：pending 任务数 + active 任务数
-            const pendingCount = transfers.filter(t => t.status === 'pending').length;
-            const activeCount = transfers.filter(t => ['starting', 'transferring'].includes(t.status)).length;
-            const countParts = [];
-            if (pendingCount > 0) countParts.push(`${pendingCount} ${currentLang === 'zh' ? '待上传' : 'pending'}`);
-            if (activeCount > 0) countParts.push(`${activeCount} ${currentLang === 'zh' ? '进行中' : 'active'}`);
-            document.getElementById('uploadCount').textContent = countParts.join(' · ');
+            // 统计当前列表中显示的条目数（只统计可见文件条目）
+            let itemCount = 0;
+            let hasPending = false;
+            visibleTransfers.forEach(tr => {
+                tr._visibleFiles.forEach(({ f }) => {
+                    itemCount++;
+                    if (f.status === 'pending') hasPending = true;
+                });
+            });
+            document.getElementById('uploadCount').textContent = itemCount > 0
+                ? `${itemCount} ${currentLang === 'zh' ? '个条目' : (itemCount === 1 ? 'item' : 'items')}`
+                : '';
 
-            // "开始上传"按钮：有 pending 任务时启用
-            document.getElementById('btnStartUpload').disabled = pendingCount === 0;
+            // "开始上传"按钮：有 pending 状态的条目时启用
+            document.getElementById('btnStartUpload').disabled = !hasPending;
 
             list.innerHTML = '';
             visibleTransfers.forEach(tr => {
