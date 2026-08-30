@@ -10,6 +10,7 @@ services:
       - FLASK_DEBUG=0
       - HOST=0.0.0.0
       - PORT=8090
+      - TZ=Asia/Shanghai
     volumes:
       # 持久化配置文件（FTP 服务器列表等）
       - ./config.yml:/app/config.yml
