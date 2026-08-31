@@ -62,6 +62,8 @@ def start_transfer():
         task_refs = list(_transfer_tasks.values())
     existing_paths = set()
     for t in task_refs:
+        if t.get("server") != server_name:
+            continue
         for f in t.get("files", []):
             if f["status"] in ("pending", "uploading", "failed"):
                 existing_paths.add(f["path"])
