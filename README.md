@@ -107,7 +107,7 @@ pip3 install -r requirements.txt
 vim config.yml
 
 # 启动服务
-python3 app.py
+python3 run.py
 ```
 
 浏览器访问 <http://localhost:8090>
@@ -282,25 +282,40 @@ ui_settings:
 
 ```
 ns-webftp-dbi/
-├── app.py                # Flask 后端：文件扫描、FTP 传输、操作日志、API
-├── config.yml            # 配置文件：扫描目录、FTP 服务器、UI 设置
-├── version.txt           # 版本号（CI/CD 构建时读取）
-├── requirements.txt      # Python 依赖
-├── Dockerfile            # Docker 镜像构建
-├── docker-compose.yml    # Docker 编排
-├── build_img.sh          # 本地构建镜像脚本
+├── run.py                    # 启动入口
+├── config.yml                # 配置文件：扫描目录、FTP 服务器、UI 设置
+├── version.txt               # 版本号（CI/CD 构建时读取）
+├── requirements.txt           # Python 依赖
+├── Dockerfile                # Docker 镜像构建
+├── docker-compose.yml        # Docker 编排
+├── build_img.sh              # 本地构建镜像脚本
+├── app/                      # 应用包（MVT 架构）
+│   ├── __init__.py           # 应用工厂 create_app() + 后台任务启动
+│   ├── models/               # Model 层：数据与业务逻辑
+│   │   ├── config.py         # ConfigManager 配置管理
+│   │   ├── scanner.py        # FileScanner 文件扫描 + FileScanManager 缓存管理
+│   │   ├── transfer.py       # FTPManager 传输管理 + 任务存储 + 清理
+│   │   ├── keepalive.py      # FTP 保活连接管理（NOOP 心跳 + 指数退避重试）
+│   │   ├── server_logs.py    # 操作日志存储 + 清理
+│   │   └── ftp_status.py     # FTP 连接状态缓存 + 异步测试
+│   ├── views/                # View 层：Blueprint 路由
+│   │   ├── files.py          # 文件列表 / 扫描 / 目录管理 / UI 设置
+│   │   ├── servers.py        # 服务器 CRUD / 连接测试 / 状态查询
+│   │   ├── transfers.py      # 传输任务 CRUD / 启动 / 取消 / 重试
+│   │   ├── logs.py           # 操作日志 CRUD
+│   │   └── keepalive.py      # 保活连接管理 API
+│   └── templates/            # Template 层
+│       └── index.html        # 前端页面：暗色主题 UI（含中英双语）
 ├── .github/workflows/
-│   └── build.yml         # GitHub Actions：自动构建镜像并发布
-├── templates/
-│   └── index.html        # 前端页面：暗色主题 UI（含中英双语）
+│   └── build.yml             # GitHub Actions：自动构建镜像并发布
 └── screenshots/              # 页面截图
-    ├── main-zh.png           # 中文主界面
-    ├── main-en.png           # 英文主界面
-    ├── selected-files.png    # 勾选文件
-    ├── upload-list-active.png # 上传列表-传输中
-    ├── upload-list-failed.png # 上传列表-失败重试
-    ├── help-modal.png        # 帮助弹窗
-    └── add-server-modal.png  # 添加服务器弹窗
+    ├── main-zh.jpg           # 中文主界面
+    ├── main-en.jpg           # 英文主界面
+    ├── selected-files.jpg    # 勾选文件
+    ├── upload-list-active.jpg # 上传列表-传输中
+    ├── upload-list-failed.jpg # 上传列表-失败重试
+    ├── help-modal.jpg        # 帮助弹窗
+    └── add-server-modal.jpg  # 添加服务器弹窗
 ```
 
 ## CI/CD
@@ -310,7 +325,7 @@ ns-webftp-dbi/
 ### 触发条件
 
 - **推送 main/master 分支**：构建镜像，上传为 Actions Artifact
-- \**推送 tag（v*）\*\*：构建镜像 + 创建 GitHub Release，附带镜像文件下载
+- **推送 tag（v*）**：构建镜像 + 创建 GitHub Release，附带镜像文件下载
 - **手动触发**：GitHub 仓库 → Actions → Build and Release → Run workflow
 
 ### 构建流程
@@ -340,6 +355,7 @@ docker run -d --name ns-webftp-dbi \
 
 ## 技术栈
 
+- **架构**：MVT（Model-View-Template）模式，Flask Blueprint 路由分发
 - **后端**：Python + Flask
 - **配置**：PyYAML
 - **传输**：ftplib（标准库）
