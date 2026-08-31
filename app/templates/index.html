@@ -2027,8 +2027,8 @@
             entry.className = 'log-entry' + (level !== 'info' ? ` log-${level}` : '');
             const ts = time || new Date().toLocaleTimeString(currentLang === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
             entry.textContent = `[${ts}] ${msg}`;
-            area.appendChild(entry);
-            area.scrollTop = area.scrollHeight;
+            area.insertBefore(entry, area.firstChild);
+            area.scrollTop = 0;
             // 异步上报到服务端，按当前实例分组存储（保留 24 小时）
             const server = getCurrentServerName() || '__system__';
             fetch(`/api/logs/${encodeURIComponent(server)}`, {
@@ -2052,7 +2052,7 @@
                     entry.textContent = `[${e.time}] ${e.msg}`;
                     area.appendChild(entry);
                 });
-                area.scrollTop = area.scrollHeight;
+                area.scrollTop = 0;
             } catch (e) {
                 console.error('Load server logs failed:', e);
             }
