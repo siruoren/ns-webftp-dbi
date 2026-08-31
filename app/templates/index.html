@@ -900,6 +900,7 @@
         let autoDeleteTimers = {};
         let _pollingInProgress = false;
         let _serverChangeTimer = null;
+        let _skipNextServerLog = false;
 
         // ============================================================
         // 初始化
@@ -908,6 +909,7 @@
             try { await loadUiSettings(); } catch (e) { console.error('loadUiSettings failed:', e); }
             try { applyI18n(); } catch (e) { console.error('applyI18n failed:', e); }
             try { safeCreateIcons(); } catch (e) { console.error('lucide createIcons failed:', e); }
+            _skipNextServerLog = true;
             // 并行加载配置、文件列表、上传列表
             const results = await Promise.allSettled([
                 loadConfig(),
@@ -989,7 +991,7 @@
                 opt.textContent = `${s.name} (${s.host}:${s.port})`;
                 sel.appendChild(opt);
             });
-            const prev = sel.dataset.prev;
+            const prev = sel.dataset.prev || localStorage.getItem('currentServer');
             if (prev && servers.some(s => s.name === prev)) {
                 sel.value = prev;
             }
@@ -999,6 +1001,7 @@
         async function onServerChange() {
             const sel = document.getElementById('ftpSelect');
             sel.dataset.prev = sel.value;
+            localStorage.setItem('currentServer', sel.value);
             const name = sel.value;
             if (!name) {
                 updateFtpStatus('unknown', t('status_unknown'));
@@ -1021,7 +1024,11 @@
                 _serverChangeTimer = null;
                 // 先加载新实例的历史操作日志（按实例分组，保留24小时），再记录切换日志
                 await loadServerLogs(name);
-                log(t('log_switch_server') + name, 'info');
+                if (_skipNextServerLog) {
+                    _skipNextServerLog = false;
+                } else {
+                    log(t('log_switch_server') + name, 'info');
+                }
                 // 刷新上传列表（按当前实例隔离显示），并使用返回数据检查待上传或进行中任务
                 const all = await loadTransfers();
                 const hasActive = (all || []).some(t =>
