@@ -12,18 +12,19 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
-COPY app.py .
+COPY app/ app/
+COPY run.py .
 COPY config.yml .
-COPY templates/ templates/
 
 # 默认配置
 ENV FLASK_DEBUG=0
 ENV HOST=0.0.0.0
 ENV PORT=8090
+ENV TZ=Asia/Shanghai
 
 EXPOSE 8090
 
 # 挂载点：/games 用于扫描 Switch 安装包，/app/config.yml 用于持久化配置
 VOLUME ["./games", "./config.yml"]
 
-CMD ["python", "app.py"]
+CMD ["python", "run.py"]
