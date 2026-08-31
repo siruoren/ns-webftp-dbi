@@ -31,6 +31,7 @@ def get_server_log(server):
     with _server_logs_lock:
         entries = list(_server_logs.get(server, []))
     entries = [e for e in entries if now - e["ts"] <= LOG_RETENTION_SECONDS]
+    entries.reverse()
     result = []
     for e in entries:
         result.append({
