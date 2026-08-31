@@ -991,7 +991,8 @@
                 opt.textContent = `${s.name} (${s.host}:${s.port})`;
                 sel.appendChild(opt);
             });
-            const prev = sel.dataset.prev || localStorage.getItem('currentServer');
+            const urlServer = new URLSearchParams(window.location.search).get('server');
+            const prev = urlServer || sel.dataset.prev || localStorage.getItem('currentServer');
             if (prev && servers.some(s => s.name === prev)) {
                 sel.value = prev;
             }
@@ -1003,6 +1004,11 @@
             sel.dataset.prev = sel.value;
             localStorage.setItem('currentServer', sel.value);
             const name = sel.value;
+            // 同步实例 ID 到 URL，保持每个实例有固定可分享的 URL
+            const url = new URL(window.location);
+            if (name) url.searchParams.set('server', name);
+            else url.searchParams.delete('server');
+            history.replaceState(null, '', url);
             if (!name) {
                 updateFtpStatus('unknown', t('status_unknown'));
                 return;
