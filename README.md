@@ -14,15 +14,15 @@
 
 ### 勾选文件
 
-![勾选文件](screenshots/selected-files.png)
+![勾选文件](screenshots/selected-files.jpg)
 
 ### 上传列表（传输中）
 
-![上传列表-传输中](screenshots/upload-list-active.png)
+![上传列表-传输中](screenshots/upload-list-active.jpg)
 
 ### 上传列表（失败+重试）
 
-![上传列表-失败重试](screenshots/upload-list-failed.png)
+![上传列表-失败重试](screenshots/upload-list-failed.jpg)
 
 ### English Interface
 
@@ -30,11 +30,11 @@
 
 ### 帮助 & 排查
 
-![帮助 & 排查](screenshots/help-modal.png)
+![帮助 & 排查](screenshots/help-modal.jpg)
 
 ### 添加 FTP 服务器
 
-![添加 FTP 服务器](screenshots/add-server-modal.png)
+![添加 FTP 服务器](screenshots/add-server-modal.jpg)
 
 ## 功能特性
 
