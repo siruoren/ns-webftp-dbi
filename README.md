@@ -10,7 +10,7 @@
 
 ### 中文主界面
 
-![中文主界面](screenshots/main-zh.png)
+![中文主界面](screenshots/main-zh.jpg)
 
 ### 勾选文件
 
@@ -26,7 +26,7 @@
 
 ### English Interface
 
-![English Interface](screenshots/main-en.png)
+![English Interface](screenshots/main-en.jpg)
 
 ### 帮助 & 排查
 
