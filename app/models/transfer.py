@@ -118,6 +118,9 @@ class FTPManager:
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 task["log"].append({"time": timestamp, "msg": msg, "level": level})
 
+            # 记录连接后的基础目录（upload_path 所在目录），用于按 relpath 保持目录结构上传
+            base_pwd = [None]
+
             def connect_ftp():
                 f = FTP()
                 f.connect(server_info["host"], int(server_info["port"]), timeout=CONNECT_TIMEOUT)
@@ -143,7 +146,38 @@ class FTPManager:
                                     f.cwd(part)
                                 except error_perm:
                                     pass
+                # 记录基础目录（upload_path 所在目录），供 ensure_ftp_dir 使用
+                try:
+                    base_pwd[0] = f.pwd()
+                except Exception:
+                    base_pwd[0] = None
                 return f
+
+            def ensure_ftp_dir(ftp_obj, relpath):
+                """回到 base_pwd，然后按 relpath 的目录部分逐级创建并进入子目录。
+
+                relpath 如 "DLC/sub/file.nsp"，会在 base_pwd 下创建 DLC/sub 目录并进入。
+                最后一个部分是文件名，不作为目录处理。
+                """
+                # 先回到基础目录
+                if base_pwd[0]:
+                    try:
+                        ftp_obj.cwd(base_pwd[0])
+                    except Exception:
+                        pass
+                relpath_str = (relpath or "").replace("\\", "/").strip("/")
+                parts = relpath_str.split("/")
+                # 目录部分：除最后一个（文件名）外的所有部分
+                sub_dirs = [p for p in parts[:-1] if p and p not in (".", "..")]
+                for part in sub_dirs:
+                    try:
+                        ftp_obj.cwd(part)
+                    except error_perm:
+                        try:
+                            ftp_obj.mkd(part)
+                            ftp_obj.cwd(part)
+                        except error_perm:
+                            pass  # 目录已存在或无法创建，继续
 
             first_file = True
             ftp = None
@@ -248,6 +282,10 @@ class FTPManager:
                         wd_thread = threading.Thread(target=watchdog, daemon=True)
                         wd_thread.start()
                         try:
+                            # 按 relpath 创建 FTP 目录结构（保持原始目录层级）
+                            # 勾选文件夹上传时，relpath 如 "DLC/sub/file.nsp"，会先回到 base_pwd 再逐级创建子目录
+                            relpath = finfo.get("relpath", fname)
+                            ensure_ftp_dir(ftp, relpath)
                             with open(fpath, "rb") as f:
                                 ftp.storbinary(f"STOR {fname}", f, blocksize=BLOCK_SIZE, callback=callback)
                             if task["files"][idx]["status"] != "cancelled":
