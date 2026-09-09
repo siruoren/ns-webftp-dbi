@@ -1430,16 +1430,20 @@
             if (selectedFiles.size === 0) { alert(t('msg_select_files')); return; }
 
             // 对每个选中文件，计算相对于"所属勾选文件夹"的 relpath
-            // 勾选文件夹时，文件夹下文件保持原始目录结构上传；单独勾选的文件 relpath 为文件名
+            // 勾选文件夹时，文件夹下文件保持原始目录结构上传；单独勾选的文件 relpath 为纯文件名
             const selectedFileList = allFiles.filter(f => selectedFiles.has(f.path)).map(f => {
-                let relpath = f.relpath || f.name;
+                // 默认：单独勾选的文件，relpath 为纯文件名（平铺上传）
+                let relpath = f.name;
+                // 检查文件是否属于某个勾选的文件夹
                 for (const folder of selectedFolders) {
                     const prefix = folder + '/';
                     if (f.path.startsWith(prefix)) {
+                        // 文件在勾选文件夹的子目录中：relpath = 相对于文件夹的路径（如 DLC/sub/file.nsp）
                         relpath = f.path.substring(prefix.length);
                         break;
                     }
                     if (f.dir === folder) {
+                        // 文件直接在勾选文件夹下：relpath = 文件名
                         relpath = f.name;
                         break;
                     }
@@ -1791,11 +1795,14 @@
                             const isSelected = selectedUploadFiles.has(`${tr.id}:${idx}`);
                             const fillClass = fstatus;
                             const sizeStr = formatSize(f.size);
+                            // 显示名：勾选文件夹上传时优先显示 relpath（带相对目录结构），否则显示纯文件名
+                            const relpath = f.relpath || '';
+                            const displayName = (relpath && relpath !== f.name) ? relpath : f.name;
                             return `
                                 <div class="upload-file-item">
                                     <div class="checkbox ${isSelected ? 'checked' : ''}" ${selectable ? `onclick="toggleUploadFileSelect('${tr.id}', ${idx}, event)"` : 'style="visibility:hidden"'}></div>
                                     <div>
-                                        <div class="upload-fname">${escapeHtml(f.name)}</div>
+                                        <div class="upload-fname" title="${escapeAttr(displayName)}">${escapeHtml(displayName)}</div>
                                         ${f.error ? `<div class="upload-file-error">${escapeHtml(f.error)}</div>` : ''}
                                     </div>
                                     <div class="upload-file-size">${sizeStr}</div>
