@@ -611,7 +611,7 @@
                 log_retry_failed: "重试失败: ",
                 log_transfer_started: "传输任务已创建，共 {n} 个文件",
                 select_all: "全选/取消",
-                select_folder: "勾选/取消整个文件夹（保持相对路径上传）",
+                select_folder: "勾选/取消当前页该文件夹下的文件",
                 btn_add_upload: "添加上传",
                 btn_start_upload: "开始上传",
                 col_name: "文件名",
@@ -744,7 +744,7 @@
                 log_retry_failed: "Retry failed: ",
                 log_transfer_started: "Transfer task created, {n} files",
                 select_all: "Select all / None",
-                select_folder: "Select / deselect entire folder (preserve relative paths)",
+                select_folder: "Select / deselect files in this folder on current page",
                 btn_add_upload: "Add to Upload",
                 btn_start_upload: "Start Upload",
                 col_name: "Name",
@@ -1291,9 +1291,14 @@
                     lastDir = f.dir;
                     const sep = document.createElement('div');
                     sep.className = 'file-dir-sep';
-                    const folderChecked = selectedFolders.has(f.dir);
+                    // 分组勾选框状态：依据当前页该文件夹下文件的选择情况（全选/部分/未选）
+                    const _dirFiles = pageFiles.filter(x => x.dir === f.dir);
+                    const _selCnt = _dirFiles.filter(x => selectedFiles.has(x.path)).length;
+                    let _folderCls = 'checkbox';
+                    if (_dirFiles.length > 0 && _selCnt === _dirFiles.length) _folderCls += ' checked';
+                    else if (_selCnt > 0) _folderCls += ' indeterminate';
                     sep.innerHTML = `
-                        <div class="checkbox ${folderChecked ? 'checked' : ''}" onclick="event.stopPropagation(); toggleFolder('${escapeAttr(f.dir)}')" data-i18n-title="select_folder" title="勾选/取消整个文件夹"></div>
+                        <div class="${_folderCls}" onclick="event.stopPropagation(); toggleFolder('${escapeAttr(f.dir)}')" data-i18n-title="select_folder" title="勾选/取消当前页该文件夹下的文件"></div>
                         <i data-lucide="folder" class="dir-icon" style="width:14px;height:14px;"></i>
                         <span class="dir-path" title="${escapeAttr(f.dir)}">${escapeHtml(f.dir)}</span>
                         ${f.dir_mtime_str ? `<span class="dir-date">${f.dir_mtime_str}</span>` : ''}
@@ -1367,16 +1372,29 @@
             updateSendButton();
         }
 
-        // 勾选/取消整个文件夹：选中该文件夹下所有文件（含子目录），上传时保持相对路径
+        // 勾选/取消当前页该文件夹下的文件：
+        //   - 只取「当前页」中直接属于该文件夹（dir === dir）的文件，不递归子目录、不跨页
+        //   - 其他分页中同目录的文件不会被加入
+        //   - 勾选后，这些文件加入上传列表时 relpath = 「文件夹名/文件名」
+        //     （上传列表显示 文件夹名/文件名，FTP 路径为 upload_path/文件夹名/文件名）
         function toggleFolder(dir) {
-            const prefix = dir + '/';
-            const folderFiles = allFiles.filter(f => f.dir === dir || f.path.startsWith(prefix));
-            if (selectedFolders.has(dir)) {
-                selectedFolders.delete(dir);
-                folderFiles.forEach(f => selectedFiles.delete(f.path));
+            const filtered = getFilteredFiles();
+            const start = (currentPage - 1) * pageSize;
+            const pageFiles = filtered.slice(start, start + pageSize);
+            // 当前页中直接属于该文件夹的文件
+            const dirFiles = pageFiles.filter(f => f.dir === dir);
+            if (dirFiles.length === 0) return;
+            const allSelected = dirFiles.every(f => selectedFiles.has(f.path));
+            if (allSelected) {
+                // 当前页该文件夹下文件已全选 → 取消这些文件
+                dirFiles.forEach(f => selectedFiles.delete(f.path));
+                // 该文件夹已无任何选中文件时，移出勾选集合（影响 relpath 计算）
+                const stillHas = allFiles.some(f => f.dir === dir && selectedFiles.has(f.path));
+                if (!stillHas) selectedFolders.delete(dir);
             } else {
+                // 未全选 → 选中当前页这些文件，并记录该文件夹为勾选状态
+                dirFiles.forEach(f => selectedFiles.add(f.path));
                 selectedFolders.add(dir);
-                folderFiles.forEach(f => selectedFiles.add(f.path));
             }
             renderFileList();
             updateSendButton();
@@ -1429,22 +1447,17 @@
             if (!server) { alert(t('msg_select_server')); return; }
             if (selectedFiles.size === 0) { alert(t('msg_select_files')); return; }
 
-            // 对每个选中文件，计算相对于"所属勾选文件夹"的 relpath
-            // 勾选文件夹时，文件夹下文件保持原始目录结构上传；单独勾选的文件 relpath 为纯文件名
+            // 对每个选中文件计算 relpath：
+            //   - 属于勾选文件夹（通过文件夹勾选框加入）的文件：relpath = 「文件夹名/文件名」
+            //     上传列表显示「文件夹名/文件名」，FTP 路径为「upload_path/文件夹名/文件名」
+            //   - 单独勾选的文件：relpath = 纯文件名（平铺上传到 upload_path 根）
             const selectedFileList = allFiles.filter(f => selectedFiles.has(f.path)).map(f => {
-                // 默认：单独勾选的文件，relpath 为纯文件名（平铺上传）
                 let relpath = f.name;
-                // 检查文件是否属于某个勾选的文件夹
                 for (const folder of selectedFolders) {
-                    const prefix = folder + '/';
-                    if (f.path.startsWith(prefix)) {
-                        // 文件在勾选文件夹的子目录中：relpath = 相对于文件夹的路径（如 DLC/sub/file.nsp）
-                        relpath = f.path.substring(prefix.length);
-                        break;
-                    }
                     if (f.dir === folder) {
-                        // 文件直接在勾选文件夹下：relpath = 文件名
-                        relpath = f.name;
+                        // 取文件夹自身名称（兼容 Windows 反斜杠与正斜杠）
+                        const folderName = folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || folder;
+                        relpath = folderName + '/' + f.name;
                         break;
                     }
                 }
