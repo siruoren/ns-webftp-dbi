@@ -611,6 +611,7 @@
                 log_retry_failed: "重试失败: ",
                 log_transfer_started: "传输任务已创建，共 {n} 个文件",
                 select_all: "全选/取消",
+                select_folder: "勾选/取消整个文件夹（保持相对路径上传）",
                 btn_add_upload: "添加上传",
                 btn_start_upload: "开始上传",
                 col_name: "文件名",
@@ -743,6 +744,7 @@
                 log_retry_failed: "Retry failed: ",
                 log_transfer_started: "Transfer task created, {n} files",
                 select_all: "Select all / None",
+                select_folder: "Select / deselect entire folder (preserve relative paths)",
                 btn_add_upload: "Add to Upload",
                 btn_start_upload: "Start Upload",
                 col_name: "Name",
@@ -889,6 +891,7 @@
         // ============================================================
         let allFiles = [];
         let selectedFiles = new Set();
+        let selectedFolders = new Set();  // 勾选的文件夹（dir），用于保持相对路径上传
         let servers = [];
         let currentServerStatus = {};
         let showAllFiles = false;
@@ -1160,6 +1163,7 @@
             log(t('log_toggle_all') + (showAllFiles ? 'ON' : 'OFF'), 'info');
             // 切换后清空选中状态并重新加载
             selectedFiles.clear();
+            selectedFolders.clear();
             currentPage = 1;
             saveUiSettings();
             loadFiles();
@@ -1282,12 +1286,14 @@
             body.innerHTML = '';
             let lastDir = null;
             pageFiles.forEach(f => {
-                // 目录分组标题
+                // 目录分组标题（可勾选整个文件夹）
                 if (f.dir && f.dir !== lastDir) {
                     lastDir = f.dir;
                     const sep = document.createElement('div');
                     sep.className = 'file-dir-sep';
+                    const folderChecked = selectedFolders.has(f.dir);
                     sep.innerHTML = `
+                        <div class="checkbox ${folderChecked ? 'checked' : ''}" onclick="event.stopPropagation(); toggleFolder('${escapeAttr(f.dir)}')" data-i18n-title="select_folder" title="勾选/取消整个文件夹"></div>
                         <i data-lucide="folder" class="dir-icon" style="width:14px;height:14px;"></i>
                         <span class="dir-path" title="${escapeAttr(f.dir)}">${escapeHtml(f.dir)}</span>
                         ${f.dir_mtime_str ? `<span class="dir-date">${f.dir_mtime_str}</span>` : ''}
@@ -1361,11 +1367,27 @@
             updateSendButton();
         }
 
+        // 勾选/取消整个文件夹：选中该文件夹下所有文件（含子目录），上传时保持相对路径
+        function toggleFolder(dir) {
+            const prefix = dir + '/';
+            const folderFiles = allFiles.filter(f => f.dir === dir || f.path.startsWith(prefix));
+            if (selectedFolders.has(dir)) {
+                selectedFolders.delete(dir);
+                folderFiles.forEach(f => selectedFiles.delete(f.path));
+            } else {
+                selectedFolders.add(dir);
+                folderFiles.forEach(f => selectedFiles.add(f.path));
+            }
+            renderFileList();
+            updateSendButton();
+        }
+
         function toggleSelectAll() {
             const filtered = getFilteredFiles();
             const allSelected = filtered.every(f => selectedFiles.has(f.path));
             if (allSelected) {
                 filtered.forEach(f => selectedFiles.delete(f.path));
+                selectedFolders.clear();
             } else {
                 filtered.forEach(f => selectedFiles.add(f.path));
             }
@@ -1407,12 +1429,55 @@
             if (!server) { alert(t('msg_select_server')); return; }
             if (selectedFiles.size === 0) { alert(t('msg_select_files')); return; }
 
-            const files = allFiles.filter(f => selectedFiles.has(f.path)).map(f => ({
-                name: f.name, path: f.path, size: f.size
-            }));
+            // 对每个选中文件，计算相对于"所属勾选文件夹"的 relpath
+            // 勾选文件夹时，文件夹下文件保持原始目录结构上传；单独勾选的文件 relpath 为文件名
+            const selectedFileList = allFiles.filter(f => selectedFiles.has(f.path)).map(f => {
+                let relpath = f.relpath || f.name;
+                for (const folder of selectedFolders) {
+                    const prefix = folder + '/';
+                    if (f.path.startsWith(prefix)) {
+                        relpath = f.path.substring(prefix.length);
+                        break;
+                    }
+                    if (f.dir === folder) {
+                        relpath = f.name;
+                        break;
+                    }
+                }
+                return { name: f.name, path: f.path, size: f.size, relpath: relpath };
+            });
 
+            // 前端预去重：查询当前上传列表，过滤掉已存在的文件（同一服务器的 pending/uploading/failed）
+            let existingPaths = new Set();
+            try {
+                const tres = await fetch('/api/transfers');
+                const tdata = await tres.json();
+                for (const tr of (tdata.transfers || [])) {
+                    if (tr.server !== server) continue;
+                    for (const f of (tr.files || [])) {
+                        if (['pending', 'uploading', 'failed'].includes(f.status)) {
+                            existingPaths.add(f.path);
+                        }
+                    }
+                }
+            } catch (e) { /* 忽略，后端会再次去重 */ }
+
+            const newFiles = selectedFileList.filter(f => !existingPaths.has(f.path));
+            const preSkipped = selectedFileList.length - newFiles.length;
+
+            // 所有文件均已在上传列表中：直接提示，不发送创建请求
+            if (newFiles.length === 0) {
+                log(t('log_added_with_skip', { added: 0, skipped: preSkipped }), 'success');
+                selectedFiles.clear();
+                selectedFolders.clear();
+                renderFileList();
+                updateSendButton();
+                await loadTransfers();
+                return;
+            }
+
+            const files = newFiles;
             document.getElementById('btnSend').disabled = true;
-
             log(t('log_add_to_upload', { n: files.length, s: server }), 'info');
 
             try {
@@ -1423,27 +1488,25 @@
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    // 部分或全部文件成功添加到上传列表（已存在文件后端自动过滤）
-                    if (data.skipped) {
-                        // 有文件被过滤：显示实际添加数 + 过滤提示
-                        log(t('log_added_with_skip', { added: data.total_files, skipped: data.skipped }), 'success');
+                    // 合并前端预去重和后端去重的 skipped 数
+                    const totalSkipped = preSkipped + (data.skipped || 0);
+                    if (totalSkipped > 0) {
+                        log(t('log_added_with_skip', { added: data.total_files, skipped: totalSkipped }), 'success');
                     } else {
-                        // 无重复：显示任务创建详情（含大小）
                         log(t('log_task_created', { n: data.total_files, sz: formatSize(data.total_bytes) }), 'success');
                     }
-                    // 清空文件选中状态
                     selectedFiles.clear();
+                    selectedFolders.clear();
                     renderFileList();
                     updateSendButton();
-                    // 刷新上传列表，更新标签 badge 统计（不自动跳转页面）
                     await loadTransfers();
                 } else if (data.skipped) {
-                    // 所有文件均已在上传列表中，全部被过滤
-                    log(t('log_added_with_skip', { added: 0, skipped: data.skipped }), 'success');
+                    // 后端再次确认全部已存在
+                    log(t('log_added_with_skip', { added: 0, skipped: preSkipped + data.skipped }), 'success');
                     selectedFiles.clear();
+                    selectedFolders.clear();
                     renderFileList();
                     updateSendButton();
-                    // 刷新上传列表，更新标签 badge 统计
                     await loadTransfers();
                 } else {
                     log(t('log_task_failed') + (data.error || t('log_unknown_error')), 'error');

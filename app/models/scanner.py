@@ -22,6 +22,7 @@ class FileScanner:
             scan_dir = os.path.expanduser(scan_dir)
             if not os.path.isdir(scan_dir):
                 continue
+            scan_dir_abs = os.path.abspath(scan_dir)
             for root, dirs, files in os.walk(scan_dir):
                 if root not in dir_mtime_cache:
                     try:
@@ -41,10 +42,18 @@ class FileScanner:
                         mtime = os.path.getmtime(fpath)
                     except OSError:
                         continue
+                    # 计算相对于扫描目录的相对路径（保持目录结构上传用）
+                    try:
+                        relpath = os.path.relpath(fpath, scan_dir_abs)
+                        # 统一为正斜杠（FTP 路径分隔符）
+                        relpath = relpath.replace(os.sep, "/")
+                    except ValueError:
+                        relpath = fname
                     results.append({
                         "name": fname,
                         "path": fpath,
                         "dir": root,
+                        "relpath": relpath,
                         "dir_mtime": dir_mtime,
                         "dir_mtime_str": datetime.fromtimestamp(dir_mtime).strftime("%Y-%m-%d %H:%M") if dir_mtime else "",
                         "size": fsize,

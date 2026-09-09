@@ -49,9 +49,13 @@ def start_transfer():
                 mtime = os.path.getmtime(fpath)
             except OSError:
                 continue
+            # relpath：相对于所属目录的相对路径，用于在 FTP 上保持目录结构
+            # 前端从扫描列表传 relpath；文件夹上传 API 也会计算 relpath
+            relpath = f.get("relpath") or f.get("name") or os.path.basename(fpath)
             file_list.append({
                 "name": f.get("name", os.path.basename(fpath)),
                 "path": fpath,
+                "relpath": relpath.replace(os.sep, "/"),
                 "size": fsize,
                 "mtime": mtime,
             })
@@ -100,6 +104,7 @@ def start_transfer():
             {
                 "name": f["name"],
                 "path": f["path"],
+                "relpath": f["relpath"],
                 "size": f["size"],
                 "status": "pending",
                 "uploaded_bytes": 0,
