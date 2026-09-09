@@ -246,12 +246,15 @@ class FTPManager:
                     fname = finfo["name"]
                     fpath = finfo["path"]
                     fsize = finfo["size"]
-                    task["current_file"] = fname
+                    # 显示名：勾选文件夹上传时优先显示 relpath（带相对目录结构），否则显示纯文件名
+                    _rel = finfo.get("relpath", "") or ""
+                    display_name = _rel if (_rel and _rel != fname) else fname
+                    task["current_file"] = display_name
                     task["current_file_index"] = idx
                     task["current_file_size"] = fsize
                     task["files"][idx]["uploaded_bytes"] = 0
                     task["files"][idx]["progress"] = 0
-                    log(f"正在上传: {fname} ({_format_size(fsize)})", "info")
+                    log(f"正在上传: {display_name} ({_format_size(fsize)})", "info")
 
                     def callback(block, _task=task, _idx=idx, _fname=fname, _fsize=fsize):
                         _task["current_file_bytes"] += len(block)
@@ -291,22 +294,22 @@ class FTPManager:
                             if task["files"][idx]["status"] != "cancelled":
                                 task["files"][idx]["status"] = "completed"
                                 task["files"][idx]["progress"] = 100
-                                log(f"完成: {fname}", "success")
+                                log(f"完成: {display_name}", "success")
                             else:
-                                log(f"已取消: {fname}", "warning")
+                                log(f"已取消: {display_name}", "warning")
                             file_done = True
                             break
                         except Exception as e:
                             is_stall = stall_event.is_set()
                             if is_stall:
-                                log(f"传输停滞超时: {fname} (第 {attempt}/{MAX_RETRIES} 次)", "warning")
+                                log(f"传输停滞超时: {display_name} (第 {attempt}/{MAX_RETRIES} 次)", "warning")
                             else:
-                                log(f"上传异常: {fname} - {e} (第 {attempt}/{MAX_RETRIES} 次)", "warning")
+                                log(f"上传异常: {display_name} - {e} (第 {attempt}/{MAX_RETRIES} 次)", "warning")
                             if attempt < MAX_RETRIES and not task.get("cancelled") and task["files"][idx]["status"] != "cancelled":
                                 try:
                                     ftp = connect_ftp()
                                     ftp_holder[0] = ftp
-                                    log(f"重连成功，重试 {fname}", "success")
+                                    log(f"重连成功，重试 {display_name}", "success")
                                 except Exception as re_err:
                                     log(f"重连失败: {re_err}", "error")
                                     task["files"][idx]["status"] = "failed"
@@ -316,7 +319,7 @@ class FTPManager:
                                 if task["files"][idx]["status"] != "cancelled":
                                     task["files"][idx]["status"] = "failed"
                                     task["files"][idx]["error"] = str(e) if not is_stall else f"传输停滞超时（300秒无进展）"
-                                    log(f"上传失败: {fname} - {task['files'][idx]['error']}", "error")
+                                    log(f"上传失败: {display_name} - {task['files'][idx]['error']}", "error")
                         finally:
                             wd_active.clear()
                             stall_event.clear()
